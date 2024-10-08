@@ -5,6 +5,8 @@ import com.googlecode.javacv.cpp.opencv_core;
 
 import javafx.fxml.FXML;
 import javafx.application.Platform;
+import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
 import javafx.scene.control.Label;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
@@ -124,10 +126,6 @@ public class Controller {
     //endregion
 
     //region Wheel encoders variables declaration
-    /**
-     * Wheel encoders:
-     **/
-
     private float dxRight = 0;
     private float totalRightJointPosition = 0;
     private float currentRightJointPosition = 0;
@@ -141,52 +139,79 @@ public class Controller {
     private FloatW robotLeftJointPosition = new FloatW(3);
     //endregion
 
-    //region GPS variables declaration
-    /**
-     * GPS:
-     **/
-
-    public static final double CHARGER_XCOORD = 1.78;  // The charger X coordinate.
-    public static final double CHARGER_YCOORD = -0.78; // The charger Y coordinate.
-    public static final double MAX_GPS_DIST = 5.0;   // The max Euclidean distance from the charger.
-    //endregion
-
-    //region V-rep communication variables declaration
+    //region V-rep communication and simulation variables declaration
     private final remoteApi vRep = new remoteApi();
     private int clientID = -1;
+
+    private final int    VREP_SENS_AXIS_X = -1;     // To reverse the x axis (-1) or not (1) in VREP simulation
+    private final int    VREP_SENS_AXIS_Y = -1;     // To reverse the y axis (-1) or not (1) in VREP simulation
+    private final double VREP_START_POS_X = +2.130; // The robot start x pos in the VREP simulation
+    private final double VREP_START_POS_Y = -0.775; // The robot start y pos in the VREP simulation
+
+    private final double CHARGER_XCOORD = 0.; // The charger X coordinate. Ori : 1.78
+    private final double CHARGER_YCOORD = 0.; // The charger Y coordinate. Ori : -0.78
+    private final double MAX_GPS_DIST = 5.0;  // The max Euclidean distance from the charger.
+
+    private final String VREP_IPV4 = "127.0.0.1";
+    private final int VREP_PORT = 20001;
+
+    private final String VREP_ROBOT_NAME = "Roomba";
+    private final String VREP_ROBOT_LEFT_WHEEL_NAME = "JointLeftWheel";
+    private final String VREP_ROBOT_RIGHT_WHEEL_NAME = "JointRightWheel";
+    private final String VREP_ROBOT_VISION_SENSOR_NAME = "Vision_sensor";
+    private final String CAMERA_WND_NAME = "Camera";
     //endregion
 
     //region Timers variables declaration
-    /**
-     * Timers:
-     **/
-
     private int MAX_BATT_TIME = 60 * 20; // Default 20 mins battery time.
     private final int MAX_BATT_VOLT = 12;      // volts.
 
     private final Timer motionTimer = new Timer();
     private final Timer batteryTimer = new Timer();
     //endregion
+
+    //region Threads variables declaration
+    private final Thread updateUIThread = new Thread(this::updateUIThreadRunnable);
+    private final Thread updateSensorThread = new Thread(this::updateSensorThreadRunnable);
+    private final Thread mainThread = new Thread(this::mainThreadRunnable);
     //endregion
+    //endregion
+
+    private Stage primaryStage = null;
+
+    public void setStage(Stage stage) {
+        if (this.primaryStage != null)
+        {
+            // remove handler
+        }
+        this.primaryStage = stage;
+        this.primaryStage.setOnCloseRequest((WindowEvent event) -> handleCloseEvent());
+    }
+
+    private void handleCloseEvent() {
+        System.out.println("L'application se ferme...");
+        running = false;
+        // Exemple : myThread.interrupt();
+    }
 
     //region Methods
     //region Battery methods
-    public int getBatteryTime() {
+    private int getBatteryTime() {
         return (batteryTimer.getSec());
     }
 
-    public void setBatteryTime(int min) {
+    private void setBatteryTime(int min) {
         MAX_BATT_TIME = 60 * min;
         motionTimer.setSec(MAX_BATT_TIME);
         motionTimer.restart();
     }
 
-    public double getBatteryCapacity() {
+    private double getBatteryCapacity() {
         double v = (double) MAX_BATT_VOLT - Utils.map(batteryTimer.getSec(), 0, (double) MAX_BATT_TIME, 0, (double) MAX_BATT_VOLT);
         return (Math.max(v, 0.0));
     }
 
-    public double getBatteryPercentage() {
+    private double getBatteryPercentage() {
         double v = getBatteryCapacity();
 
         if ((v >= 9.6) && (v <= 12)) return (100.0);
@@ -198,7 +223,7 @@ public class Controller {
             return (0.0);
     }
 
-    public boolean getBatteryState() {
+    private boolean getBatteryState() {
         double v = getBatteryCapacity();
         return (v > 0.0);
     }
@@ -248,46 +273,46 @@ public class Controller {
         return ((float) Math.atan2(sin_da, cos_da));
     }
 
-    public double getLeftWheelEnc() {
+    private double getLeftWheelEnc() {
         return (encoderValues[0]);
     }
 
-    public double getRightWheelEnc() {
+    private double getRightWheelEnc() {
         return (encoderValues[1]);
     }
 
-    public int getEncoderNo() {
+    private int getEncoderNo() {
         return (2);
     }
     //endregion
 
     //region GPS methods
-    public double[] readGPS() {
+    private double[] readGPS() {
         IntW baseHandle = new IntW(1);
         FloatWA position = new FloatWA(3);
-        vRep.simxGetObjectHandle(clientID, "Roomba", baseHandle, remoteApi.simx_opmode_streaming);
+        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_NAME, baseHandle, remoteApi.simx_opmode_streaming);
         vRep.simxGetObjectPosition(clientID, baseHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
         double[] positions = new double[position.getArray().length];
 
-        positions[0] = Math.round((-(double) position.getArray()[0] + 2.130) * 100.0) / 100.0;
-        positions[1] = Math.round((-(double) position.getArray()[1] - 0.775) * 100.0) / 100.0;
+        positions[0] = Math.round((VREP_SENS_AXIS_X * (double) position.getArray()[0] + VREP_START_POS_X) * 100.0) / 100.0;
+        positions[1] = Math.round((VREP_SENS_AXIS_Y * (double) position.getArray()[1] + VREP_START_POS_Y) * 100.0) / 100.0;
         positions[2] = Math.round((double) position.getArray()[2] * 100.0) / 100.0;
         return (positions);
     }
 
-    public double getGPSX() {
+    private double getGPSX() {
         return (gpsValues[0]);
     }
 
-    public double getGPSY() {
+    private double getGPSY() {
         return (gpsValues[1]);
     }
 
-    public double getGPSZ() {
+    private double getGPSZ() {
         return (gpsValues[2]);
     }
 
-    public int getGPSNo() {
+    private int getGPSNo() {
         return (3);
     }
     //endregion
@@ -331,11 +356,11 @@ public class Controller {
         return (sonarValues);
     }
 
-    public double getSonarRange(int sensor) {
+    private double getSonarRange(int sensor) {
         return (sonarValues[sensor]);
     }
 
-    public int getSonarNo() {
+    private int getSonarNo() {
         return (sonarValues.length);
     }
     //endregion
@@ -399,47 +424,47 @@ public class Controller {
         return (rotated);
     }
 
-    public BufferedImage getImage() {
+    private BufferedImage getImage() {
         return (rotate(bufferedImage, -90, false));
     }
 
-    public int getImageWidth() {
+    private int getImageWidth() {
         return (bufferedImage.getWidth());
     }
 
-    public int getImageHeight() {
+    private int getImageHeight() {
         return (bufferedImage.getHeight());
     }
 
-    public int getImagePixel(int x, int y) {
+    private int getImagePixel(int x, int y) {
         return (getGrayscale(bufferedImage, x, y));
     }
 
-    public void setImagePixel(int x, int y, int rgb) {
+    private void setImagePixel(int x, int y, int rgb) {
         bufferedImage.setRGB(x, y, rgb + (rgb << 8) + (rgb << 16));
     }
 
-    public int getTargetX() {
+    private int getTargetX() {
         return (point.x());
     }
 
-    public int getTargetY() {
+    private int getTargetY() {
         return (point.y());
     }
 
-    public double getTargetMinScore() {
+    private double getTargetMinScore() {
         return (targetMinScore);
     }
 
-    public double getTargetMaxScore() {
+    private double getTargetMaxScore() {
         return (targetMaxScore);
     }
 
-    public void displayImage() {
+    private void displayImage() {
         ImageViewer.display(getImage());
     }
 
-    public void templateMatchingCV(BufferedImage image) {
+    private void templateMatchingCV(BufferedImage image) {
         // [1]Load source and template image files:
         IplImage src = IplImage.create(image.getWidth(), image.getHeight(), opencv_core.IPL_DEPTH_8U, 1);
         src.copyFrom(image);
@@ -517,16 +542,16 @@ public class Controller {
         btnBack.setStyle(defaultButtonStyle);
     }
 
-    public void setVel(float lVel, float rVel) {
+    private void setVel(float lVel, float rVel) {
         vRep.simxSetJointTargetVelocity(clientID, leftWheelHandle.getValue(), lVel, remoteApi.simx_opmode_oneshot);
         vRep.simxSetJointTargetVelocity(clientID, rightWheelHandle.getValue(), rVel, remoteApi.simx_opmode_oneshot);
     }
 
-    public void move(float vel) {
+    private void move(float vel) {
         setVel(vel, vel);
     }
 
-    public void move(float vel, int time) {
+    private void move(float vel, int time) {
         motionTimer.setMs(time);
         motionTimer.restart();
         while (motionTimer.getState()) {
@@ -535,11 +560,11 @@ public class Controller {
         stop();
     }
 
-    public void turnSpot(float vel) {
+    private void turnSpot(float vel) {
         setVel(vel, -vel);
     }
 
-    public void turnSpot(float vel, int time) {
+    private void turnSpot(float vel, int time) {
         motionTimer.setMs(time);
         motionTimer.restart();
         while (motionTimer.getState()) {
@@ -548,12 +573,12 @@ public class Controller {
         stop();
     }
 
-    public void turnSharp(float vel) {
+    private void turnSharp(float vel) {
         if (vel > 0) setVel(vel, 0);
         else setVel(0, -vel);
     }
 
-    public void turnSharp(float vel, int time) {
+    private void turnSharp(float vel, int time) {
         motionTimer.setMs(time);
         motionTimer.restart();
         while (motionTimer.getState()) {
@@ -562,12 +587,12 @@ public class Controller {
         stop();
     }
 
-    public void turnSmooth(float vel) {
+    private void turnSmooth(float vel) {
         if (vel > 0) setVel(vel, vel / 2);
         else setVel(-vel / 2, -vel);
     }
 
-    public void turnSmooth(float vel, int time) {
+    private void turnSmooth(float vel, int time) {
         motionTimer.setMs(time);
         motionTimer.restart();
         while (motionTimer.getState()) {
@@ -576,7 +601,7 @@ public class Controller {
         stop();
     }
 
-    public void teleoperate(char dir, int vel) {
+    private void teleoperate(char dir, int vel) {
         switch (dir) {
             case 's':
                 move(vel = 0);
@@ -599,7 +624,7 @@ public class Controller {
 
     //region Generic Methods
     public void connectToVrep() {
-        clientID = vRep.simxStart("127.0.0.1", 20001, true, true, 5000, 5);
+        clientID = vRep.simxStart(VREP_IPV4, VREP_PORT, true, true, 5000, 5);
         if (clientID == -1)
         {
             running = false;
@@ -615,14 +640,14 @@ public class Controller {
         }
     }
 
-    public void setup() {
-        vRep.simxGetObjectHandle(clientID, "JointLeftWheel", leftWheelHandle, remoteApi.simx_opmode_blocking);
-        vRep.simxGetObjectHandle(clientID, "JointRightWheel", rightWheelHandle, remoteApi.simx_opmode_blocking);
-        vRep.simxGetObjectHandle(clientID, "Vision_sensor", cameraHandle, remoteApi.simx_opmode_blocking);
+    private void setup() {
+        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_LEFT_WHEEL_NAME, leftWheelHandle, remoteApi.simx_opmode_blocking);
+        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_RIGHT_WHEEL_NAME, rightWheelHandle, remoteApi.simx_opmode_blocking);
+        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_VISION_SENSOR_NAME, cameraHandle, remoteApi.simx_opmode_blocking);
 
         defaultButtonStyle = btnForward.getStyle();
         pw = canvasCamera.getGraphicsContext2D().getPixelWriter();
-        ImageViewer.open(resolutionCamera, resolutionCamera, "Camera");
+        ImageViewer.open(resolutionCamera, resolutionCamera, CAMERA_WND_NAME);
 
         motionTimer.setSec(1);
         batteryTimer.setSec(MAX_BATT_TIME);
@@ -634,9 +659,8 @@ public class Controller {
         updateUIThread.start();
     }
 
-    private final Thread updateUIThread = new Thread(this::updateUIThreadRunnable);
-
-    public void updateUIThreadRunnable() {
+    private void updateUIThreadRunnable() {
+        System.out.println("start update UI");
         while (running) {
             if (runGPS) {
                 lblGpsX.setText("X: " + gpsValues[0]);
@@ -658,11 +682,12 @@ public class Controller {
             }
             Delay.ms(20);
         }
+        System.out.println("stop update UI");
     }
 
-    private final Thread updateSensorThread = new Thread(this::updateSensorThreadRunnable);
-
     private void updateSensorThreadRunnable() {
+        System.out.println("start update sensors");
+
         setBatteryTime(20); // set battery for 20 minutes
         while (running) {
             if (runGPS) {
@@ -689,11 +714,12 @@ public class Controller {
             }
             Delay.ms(1);
         }
+        System.out.println("stop update sensors");
     }
 
-    private final Thread mainThread = new Thread(this::mainThreadRunnable);
-
     private void mainThreadRunnable() {
+        System.out.println("start main");
+
         while (running) {
             templateMatchingCV(getImage());
             //        Integer[] priority = new Integer[2];
@@ -721,6 +747,8 @@ public class Controller {
             //
             Delay.ms(1);
         }
+
+        System.out.println("stop main");
     }
     //endregion
     //endregion
