@@ -1,5 +1,7 @@
 package utils;
 
+import sun.security.x509.EDIPartyName;
+
 import java.awt.*;
 import javax.swing.*;
 
@@ -10,26 +12,34 @@ public class ImageViewer
 
     public static void display(Image image)
     {
+        System.out.println("ImageViewer display");
+
         display(image, false);
     }
 
     public static void display(Image image, boolean adjustSize)
     {
+        System.out.println("ImageViewer display 2");
+
         imageIcon.setImage(image);
 
         if(adjustSize)
-        editorFrame.setSize(new Dimension(image.getWidth(null), image.getHeight(null)));
+            editorFrame.setSize(new Dimension(image.getWidth(null), image.getHeight(null)));
 
         if(editorFrame != null)
-        editorFrame.repaint();
+            editorFrame.repaint();
     }
 
     public static void open(int width, int height, String title)
     {
+        System.out.println("ImageViewer open");
         SwingUtilities.invokeLater(() ->
         {
+            dispose();
             editorFrame = new JFrame(title);
+
             editorFrame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+            editorFrame.setDefaultCloseOperation(javax.swing.JFrame.EXIT_ON_CLOSE);
 
             editorFrame.setSize(width, height);
             editorFrame.setPreferredSize(new Dimension(width, height));
@@ -42,5 +52,14 @@ public class ImageViewer
             editorFrame.setLocationRelativeTo(null);
             editorFrame.setVisible(true);
         });
+    }
+
+    public static void dispose()
+    {
+        if (editorFrame != null)
+        {
+            editorFrame.dispose();
+            System.out.println("ImageViewer dispose");
+        }
     }
 }

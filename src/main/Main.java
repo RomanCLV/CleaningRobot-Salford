@@ -1,6 +1,7 @@
 package main;
 
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -16,6 +17,7 @@ public class Main extends Application
 
         Controller controller = loader.getController();
         controller.setStage(primaryStage);
+        controller.init();
 
         Scene scene = new Scene(root, 1024, 512);
         primaryStage.setTitle("Scene");
@@ -32,5 +34,7 @@ public class Main extends Application
     public void stop()
     {
         System.out.println("stop");
+        Platform.exit();
+        //System.exit(0);
     }
 }

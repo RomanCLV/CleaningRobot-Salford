@@ -18,23 +18,22 @@ import utils.Timer;
 import utils.Utils;
 
 import java.awt.*;
-import java.util.Arrays;
 import java.awt.image.BufferedImage;
-import java.util.Collections;
 
 import static com.googlecode.javacv.cpp.opencv_core.*;
+import static com.googlecode.javacv.cpp.opencv_highgui.cvDestroyAllWindows;
 import static com.googlecode.javacv.cpp.opencv_highgui.cvLoadImage;
 import static com.googlecode.javacv.cpp.opencv_imgproc.cvMatchTemplate;
 import static com.googlecode.javacv.cpp.opencv_imgproc.CV_TM_CCOEFF_NORMED;
 
 /**
- * Created by Theo Theodoridis. | Updated by Roman CLAVIER.
+ * Created by Theo Theodoridis.
  * Class    : Controller
- * Version  : v1.0 | v1.1
- * Date     : © Copyright 01/11/2020 | 08/10/2024
+ * Version  : v1.0
+ * Date     : © Copyright 01/11/2020
  * User     : ttheod
- * email    : ttheod@gmail.com | roman.clavier.2001@gmail.com
- * Comments : None. | I'm a big boss
+ * email    : ttheod@gmail.com
+ * Comments : None.
  **/
 
 public class Controller {
@@ -82,6 +81,7 @@ public class Controller {
     private Label lblLeftWheel;
 
     private String defaultButtonStyle;
+
     //endregion
 
     //region Sensors variables declaration
@@ -123,6 +123,8 @@ public class Controller {
     private char[] imageArray = new char[resolutionCamera * resolutionCamera * 3];
     private Color[][] colorMatrix = new Color[resolutionCamera][resolutionCamera];
     private BufferedImage bufferedImage = new BufferedImage(resolutionCamera, resolutionCamera, BufferedImage.TYPE_INT_RGB);
+
+    private IplImage markerImage;
     //endregion
 
     //region Wheel encoders variables declaration
@@ -140,7 +142,7 @@ public class Controller {
     //endregion
 
     //region V-rep communication and simulation variables declaration
-    private final remoteApi vRep = new remoteApi();
+    private remoteApi vRep;
     private int clientID = -1;
 
     private final int    VREP_SENS_AXIS_X = -1;     // To reverse the x axis (-1) or not (1) in VREP simulation
@@ -175,26 +177,31 @@ public class Controller {
     private final Thread updateSensorThread = new Thread(this::updateSensorThreadRunnable);
     private final Thread mainThread = new Thread(this::mainThreadRunnable);
     //endregion
-    //endregion
 
     private Stage primaryStage = null;
 
+    //endregion
+
+    //region Methods
+    //region Stage & close events method
     public void setStage(Stage stage) {
-        if (this.primaryStage != null)
+        if (primaryStage != null)
         {
-            // remove handler
+            primaryStage.removeEventHandler(WindowEvent.WINDOW_CLOSE_REQUEST, (WindowEvent event) -> handleCloseEvent());
         }
-        this.primaryStage = stage;
-        this.primaryStage.setOnCloseRequest((WindowEvent event) -> handleCloseEvent());
+        primaryStage = stage;
+        primaryStage.setOnCloseRequest((WindowEvent event) -> handleCloseEvent());
     }
 
     private void handleCloseEvent() {
-        System.out.println("L'application se ferme...");
-        running = false;
-        // Exemple : myThread.interrupt();
-    }
+        disconnectToVrep();
+        ImageViewer.dispose();
+        System.out.println("cv close");
+        cvDestroyAllWindows();
 
-    //region Methods
+    }
+    //endregion
+
     //region Battery methods
     private int getBatteryTime() {
         return (batteryTimer.getSec());
@@ -370,8 +377,10 @@ public class Controller {
         if (firstCameraRead) {
             vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_streaming);
             firstCameraRead = false;
-        } else
+        }
+        else {
             vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_buffer);
+        }
         return (imageToColor(image));
     }
 
@@ -468,14 +477,14 @@ public class Controller {
         // [1]Load source and template image files:
         IplImage src = IplImage.create(image.getWidth(), image.getHeight(), opencv_core.IPL_DEPTH_8U, 1);
         src.copyFrom(image);
-        IplImage tmp = cvLoadImage("data/images/marker.jpg", 0);
+
 
         // [2]The Correlation Image Result:
-        IplImage result = cvCreateImage(cvSize(src.width() - tmp.width() + 1, src.height() - tmp.height() + 1), IPL_DEPTH_32F, 1);
+        IplImage result = cvCreateImage(cvSize(src.width() - markerImage.width() + 1, src.height() - markerImage.height() + 1), IPL_DEPTH_32F, 1);
 
         // [3]Select a function template-match method:
         //cvMatchTemplate(src, tmp, result, CV_TM_CCORR_NORMED);  //1*
-        cvMatchTemplate(src, tmp, result, CV_TM_CCOEFF_NORMED);   //5*
+        cvMatchTemplate(src, markerImage, result, CV_TM_CCOEFF_NORMED);   //5*
 
         double min_val[] = new double[2];
         double max_val[] = new double[2];
@@ -492,8 +501,8 @@ public class Controller {
         //System.out.println("Max: " + targetMax);
 
         // [6]Mark at point the image template coordinates:
-        point.x(maxLoc.x() + tmp.width());
-        point.y(maxLoc.y() + tmp.height());
+        point.x(maxLoc.x() + markerImage.width());
+        point.y(maxLoc.y() + markerImage.height());
 
         // [7]Draw the rectangle result in source image:
         cvRectangle(src, maxLoc, point, CvScalar.GRAY, 2, 8, 0);
@@ -623,21 +632,64 @@ public class Controller {
     //endregion
 
     //region Generic Methods
-    public void connectToVrep() {
-        clientID = vRep.simxStart(VREP_IPV4, VREP_PORT, true, true, 5000, 5);
-        if (clientID == -1)
-        {
-            running = false;
-            btnConnect.setText("Failed");
-            btnConnect.setStyle("-fx-background-color: #FF0000; ");
-            vRep.simxFinish(clientID);
+    public void init() {
+        defaultButtonStyle = btnForward.getStyle();
+        markerImage = cvLoadImage("data/images/marker.jpg", 0);
+        vRep = new remoteApi();
+        vRep.simxFinish(-1); // close all simulations... to be sure
+    }
+
+    public void btnConnectPressed() {
+        if (clientID == -1) {
+            if (connectToVrep())
+            {
+                btnConnect.setText("Connected");
+                btnConnect.setStyle("-fx-background-color: #7FFF00; ");
+                setup();
+            }
+            else {
+                btnConnect.setText("Failed");
+                btnConnect.setStyle("-fx-background-color: #FF0000; ");
+            }
         }
         else {
-            btnConnect.setStyle("-fx-background-color: #7FFF00; ");
-            btnConnect.setText("Connected");
-            running = true;
-            setup();
+            btnConnect.setText("Connect");
+            btnConnect.setStyle(defaultButtonStyle);
+            disconnectToVrep();
+            ImageViewer.dispose();
         }
+    }
+
+    private boolean connectToVrep() {
+        btnConnect.setDisable(true);
+        clientID = vRep.simxStart(VREP_IPV4, VREP_PORT, true, true, 5000, 5);
+        btnConnect.setDisable(false);
+        return clientID != -1;
+    }
+
+    private void disconnectToVrep() {
+        running = false;
+        btnConnect.setDisable(true);
+
+        motionTimer.stop();
+        batteryTimer.stop();
+
+        try
+        {
+            Thread.sleep(500);
+        }
+        catch (InterruptedException e) {}
+
+        Platform.runLater(new Runnable() {
+            @Override
+            public void run() {
+                //vRep.simxStopSimulation(clientID, remoteApi.simx_opmode_blocking);
+                vRep.simxFinish(clientID);
+
+                clientID = -1;
+                btnConnect.setDisable(false);
+            }
+        });
     }
 
     private void setup() {
@@ -645,9 +697,10 @@ public class Controller {
         vRep.simxGetObjectHandle(clientID, VREP_ROBOT_RIGHT_WHEEL_NAME, rightWheelHandle, remoteApi.simx_opmode_blocking);
         vRep.simxGetObjectHandle(clientID, VREP_ROBOT_VISION_SENSOR_NAME, cameraHandle, remoteApi.simx_opmode_blocking);
 
-        defaultButtonStyle = btnForward.getStyle();
         pw = canvasCamera.getGraphicsContext2D().getPixelWriter();
         ImageViewer.open(resolutionCamera, resolutionCamera, CAMERA_WND_NAME);
+
+        running = true;
 
         motionTimer.setSec(1);
         batteryTimer.setSec(MAX_BATT_TIME);
@@ -655,31 +708,42 @@ public class Controller {
         batteryTimer.start();
 
         updateSensorThread.start();
-        mainThread.start();
         updateUIThread.start();
+        mainThread.start();
     }
 
     private void updateUIThreadRunnable() {
         System.out.println("start update UI");
         while (running) {
-            if (runGPS) {
-                lblGpsX.setText("X: " + gpsValues[0]);
-                lblGpsY.setText("Y: " + gpsValues[1]);
-                lblGpsZ.setText("Z: " + gpsValues[2]);
-            }
-            if (runSensors) {
-                lblSensor0.setText(sonarValues[0] + "m");
-                lblSensor1.setText(sonarValues[1] + "m");
-                lblSensor2.setText(sonarValues[2] + "m");
-                lblSensor3.setText(sonarValues[3] + "m");
-                lblSensor4.setText(sonarValues[4] + "m");
-                lblSensor5.setText(sonarValues[5] + "m");
-                lblSensor5.setText(sonarValues[5] + "m");
-            }
-            if (runWheelEncoder) {
-                lblRightWheel.setText("Right : " + encoderValues[0]);
-                lblLeftWheel.setText("Left : " + encoderValues[1]);
-            }
+            Platform.runLater(new Runnable() {
+                @Override
+                public void run() {
+                    if (running)
+                    {
+                        if (runGPS) {
+                            lblGpsX.setText("X: " + gpsValues[0]);
+                            lblGpsY.setText("Y: " + gpsValues[1]);
+                            lblGpsZ.setText("Z: " + gpsValues[2]);
+                        }
+                        if (runSensors) {
+                            lblSensor0.setText(sonarValues[0] + "m");
+                            lblSensor1.setText(sonarValues[1] + "m");
+                            lblSensor2.setText(sonarValues[2] + "m");
+                            lblSensor3.setText(sonarValues[3] + "m");
+                            lblSensor4.setText(sonarValues[4] + "m");
+                            lblSensor5.setText(sonarValues[5] + "m");
+                            lblSensor5.setText(sonarValues[5] + "m");
+                        }
+                        if (runWheelEncoder) {
+                            lblRightWheel.setText("Right : " + encoderValues[0]);
+                            lblLeftWheel.setText("Left : " + encoderValues[1]);
+                        }
+                        if (runCamera) {
+                            templateMatchingCV(getImage());
+                        }
+                    }
+                }
+            });
             Delay.ms(20);
         }
         System.out.println("stop update UI");
@@ -693,25 +757,29 @@ public class Controller {
             if (runGPS) {
                 gpsValues = readGPS();
             }
+
+            if (!running) break;
             if (runSensors) {
                 sonarValues = readSonars();
             }
+
+            if (!running) break;
             if (runWheelEncoder) {
                 encoderValues[0] = readLeftWheelEnc();
                 encoderValues[1] = readRightWheelEnc();
             }
+
+            if (!running) break;
             if (runCamera) {
                 imageCamera = readCamera();
             }
+
+            if (!running) break;
             if (runMotion) {
                 teleoperate(dir, vel);
             }
-            // [3]Update battery:
-            if (!getBatteryState()) {
-                System.err.println("Error: Robot out of battery...");
-                move(0, 1000);
-                running = false;
-            }
+
+            if (!running) break;
             Delay.ms(1);
         }
         System.out.println("stop update sensors");
@@ -719,37 +787,17 @@ public class Controller {
 
     private void mainThreadRunnable() {
         System.out.println("start main");
-
         while (running) {
-            templateMatchingCV(getImage());
-            //        Integer[] priority = new Integer[2];
-//        double cam = getTargetMaxScore();                                                      // Target horizontal detection (pixels).
-//        double bat = getBatteryCapacity();                                                     // Battery capacity (volts).
-//        double snr = Arrays.stream(getSonarRanges()).min().getAsDouble();                      // Min sonar range radius (meters).
-//        double gps = Utils.getEuclidean(CHARGER_XCOORD, getGPSY(), getGPSX(), CHARGER_YCOORD); // GPS distance from charger (meters?).
-//        double[] sensors = new double[]{bat, snr, cam, gps};                                   // Sensor vector.
-//
-//        double[] sonarData = new double[]
-//                {
-//                        getSonarRange(0),
-//                        getSonarRange(1),
-//                        getSonarRange(2),
-//                        getSonarRange(3),
-//                        getSonarRange(4),
-//                        getSonarRange(5)
-//                };
-
-            //avoid();
-
-            //double leftMinSonarRadius  = Arrays.stream(new double[]{getSonarRange(0), getSonarRange(1), getSonarRange(2)}).min().getAsDouble();
-            //double rightMinSonarRadius = Arrays.stream(new double[]{getSonarRange(3), getSonarRange(4), getSonarRange(5)}).min().getAsDouble();
-
-            //
+            if (!getBatteryState()) {
+                System.err.println("Error: Robot out of battery...");
+                move(0, 1000);
+                disconnectToVrep();
+            }
             Delay.ms(1);
         }
-
         System.out.println("stop main");
     }
+
     //endregion
     //endregion
 }
