@@ -12,15 +12,11 @@ public class ImageViewer
 
     public static void display(Image image)
     {
-        System.out.println("ImageViewer display");
-
         display(image, false);
     }
 
     public static void display(Image image, boolean adjustSize)
     {
-        System.out.println("ImageViewer display 2");
-
         imageIcon.setImage(image);
 
         if(adjustSize)
@@ -32,7 +28,6 @@ public class ImageViewer
 
     public static void open(int width, int height, String title)
     {
-        System.out.println("ImageViewer open");
         SwingUtilities.invokeLater(() ->
         {
             dispose();
@@ -59,7 +54,7 @@ public class ImageViewer
         if (editorFrame != null)
         {
             editorFrame.dispose();
-            System.out.println("ImageViewer dispose");
+            editorFrame = null;
         }
     }
 }
