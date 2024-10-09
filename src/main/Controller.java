@@ -178,6 +178,11 @@ public class Controller {
     private final Thread mainThread = new Thread(this::mainThreadRunnable);
     //endregion
 
+    //region States variables declaration
+    States currentState = States.None;
+    States requestState = States.Initialize;
+    //endregion
+
     private Stage primaryStage = null;
 
     //endregion
@@ -788,6 +793,9 @@ public class Controller {
     private void mainThreadRunnable() {
         System.out.println("start main");
         while (running) {
+            requestAutomate();
+            stateAutomate();
+
             if (!getBatteryState()) {
                 System.err.println("Error: Robot out of battery...");
                 move(0, 1000);
@@ -799,5 +807,53 @@ public class Controller {
     }
 
     //endregion
+
+    //region Automate Methods
+    private void requestAutomate() {
+        if (requestState != currentState) {
+            switch (requestState){
+                case None:
+                    currentState = States.None;
+                    break;
+                case Initialize:
+                    currentState = States.Initialize;
+                    break;
+                case Clean:
+                    currentState = States.Clean;
+                    break;
+                case Avoid:
+                    currentState = States.Avoid;
+                    break;
+                case Wander:
+                    currentState = States.Wander;
+                    break;
+                case Track:
+                    currentState = States.Track;
+                    break;
+            }
+        }
+    }
+
+    private void stateAutomate() {
+        switch (currentState){
+            case None:
+                break;
+            case Initialize:
+                move(-vel, 3000);
+                requestState = States.Clean ;
+                break;
+            case Clean:
+                break;
+            case Avoid:
+                break;
+            case Wander:
+                break;
+            case Track:
+                break;
+        }
+    }
+
+    //endregion
+
     //endregion
 }
