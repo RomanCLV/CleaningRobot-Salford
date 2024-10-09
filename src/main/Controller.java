@@ -12,16 +12,14 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
 import javafx.scene.image.PixelWriter;
 
-import utils.Delay;
-import utils.ImageViewer;
-import utils.Timer;
-import utils.Utils;
+import utils.*;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
 
 import static com.googlecode.javacv.cpp.opencv_core.*;
 import static com.googlecode.javacv.cpp.opencv_highgui.cvDestroyAllWindows;
+import static com.googlecode.javacv.cpp.opencv_highgui.cvDestroyWindow;
 import static com.googlecode.javacv.cpp.opencv_highgui.cvLoadImage;
 import static com.googlecode.javacv.cpp.opencv_imgproc.cvMatchTemplate;
 import static com.googlecode.javacv.cpp.opencv_imgproc.CV_TM_CCOEFF_NORMED;
@@ -36,7 +34,7 @@ import static com.googlecode.javacv.cpp.opencv_imgproc.CV_TM_CCOEFF_NORMED;
  * Comments : None.
  **/
 
-public class Controller {
+public class Controller implements IController {
     //region Variables declaration
     //region GUI variables declaration
     @FXML
@@ -102,7 +100,7 @@ public class Controller {
     private final IntW leftWheelHandle = new IntW(1);
     private final IntW rightWheelHandle = new IntW(1);
 
-    private boolean running = false;
+    private volatile boolean running = false;
     private boolean firstCameraRead = true;
     private final boolean[] firstSensorRead = new boolean[] { true, true, true, true, true, true };
     private boolean firstLeftWheelCall = true;
@@ -168,14 +166,14 @@ public class Controller {
     private int MAX_BATT_TIME = 60 * 20; // Default 20 mins battery time.
     private final int MAX_BATT_VOLT = 12;      // volts.
 
-    private final Timer motionTimer = new Timer();
-    private final Timer batteryTimer = new Timer();
+    private CustomTimer motionTimer;
+    private CustomTimer batteryTimer;
     //endregion
 
     //region Threads variables declaration
-    private final Thread updateUIThread = new Thread(this::updateUIThreadRunnable);
-    private final Thread updateSensorThread = new Thread(this::updateSensorThreadRunnable);
-    private final Thread mainThread = new Thread(this::mainThreadRunnable);
+    private Thread updateUIThread;
+    private Thread updateSensorThread;
+    private Thread mainThread;
     //endregion
 
     private Stage primaryStage = null;
@@ -184,21 +182,25 @@ public class Controller {
 
     //region Methods
     //region Stage & close events method
+    @Override
     public void setStage(Stage stage) {
         if (primaryStage != null)
         {
             primaryStage.removeEventHandler(WindowEvent.WINDOW_CLOSE_REQUEST, (WindowEvent event) -> handleCloseEvent());
         }
         primaryStage = stage;
-        primaryStage.setOnCloseRequest((WindowEvent event) -> handleCloseEvent());
+        if (primaryStage != null)
+        {
+            primaryStage.setOnCloseRequest((WindowEvent event) -> handleCloseEvent());
+        }
     }
 
     private void handleCloseEvent() {
         disconnectToVrep();
-        ImageViewer.dispose();
-        System.out.println("cv close");
-        cvDestroyAllWindows();
 
+        System.out.println("cv close");
+        cvDestroyWindow(CAMERA_WND_NAME);
+        cvDestroyAllWindows();
     }
     //endregion
 
@@ -513,31 +515,31 @@ public class Controller {
     //endregion
 
     //region Motion Methods
-    public void forward() {
+    public void btnForwardPressed() {
         resetButtonsStyle();
         btnForward.setStyle("-fx-background-color: #7FFF00; ");
         dir = 'f';
     }
 
-    public void backward() {
+    public void btnBackwardPressed() {
         resetButtonsStyle();
         btnBack.setStyle("-fx-background-color: #7FFF00; ");
         dir = 'b';
     }
 
-    public void left() {
+    public void btnLeftPressed() {
         resetButtonsStyle();
         btnLeft.setStyle("-fx-background-color: #7FFF00; ");
         dir = 'l';
     }
 
-    public void right() {
+    public void btnRightPressed() {
         resetButtonsStyle();
         btnRight.setStyle("-fx-background-color: #7FFF00; ");
         dir = 'r';
     }
 
-    public void stop() {
+    public void btnStopPressed() {
         resetButtonsStyle();
         btnStop.setStyle("-fx-background-color: #7FFF00; ");
         dir = 's';
@@ -566,7 +568,7 @@ public class Controller {
         while (motionTimer.getState()) {
             move(vel);
         }
-        stop();
+        btnStopPressed();
     }
 
     private void turnSpot(float vel) {
@@ -579,7 +581,7 @@ public class Controller {
         while (motionTimer.getState()) {
             turnSpot(vel);
         }
-        stop();
+        btnStopPressed();
     }
 
     private void turnSharp(float vel) {
@@ -593,7 +595,7 @@ public class Controller {
         while (motionTimer.getState()) {
             turnSharp(vel);
         }
-        stop();
+        btnStopPressed();
     }
 
     private void turnSmooth(float vel) {
@@ -607,7 +609,7 @@ public class Controller {
         while (motionTimer.getState()) {
             turnSmooth(vel);
         }
-        stop();
+        btnStopPressed();
     }
 
     private void teleoperate(char dir, int vel) {
@@ -616,22 +618,23 @@ public class Controller {
                 move(vel = 0);
                 break;
             case 'f':
-                move(+vel);
+                move(+vel, 3000);
                 break;
             case 'b':
-                move(-vel);
+                move(-vel, 3000);
                 break;
             case 'r':
-                turnSpot(+(float)(vel / 2));
+                turnSpot(+(float)(vel / 2), 3000);
                 break;
             case 'l':
-                turnSpot(-(float)(vel / 2));
+                turnSpot(-(float)(vel / 2), 3000);
                 break;
         }
     }
     //endregion
 
     //region Generic Methods
+    @Override
     public void init() {
         defaultButtonStyle = btnForward.getStyle();
         markerImage = cvLoadImage("data/images/marker.jpg", 0);
@@ -671,8 +674,8 @@ public class Controller {
         running = false;
         btnConnect.setDisable(true);
 
-        motionTimer.stop();
-        batteryTimer.stop();
+        if (motionTimer != null) motionTimer.stop();
+        if (batteryTimer != null) batteryTimer.stop();
 
         try
         {
@@ -683,6 +686,13 @@ public class Controller {
         Platform.runLater(new Runnable() {
             @Override
             public void run() {
+                motionTimer = null;
+                batteryTimer = null;
+
+                updateUIThread = null;
+                updateSensorThread = null;
+                mainThread = null;
+
                 //vRep.simxStopSimulation(clientID, remoteApi.simx_opmode_blocking);
                 vRep.simxFinish(clientID);
 
@@ -702,11 +712,16 @@ public class Controller {
 
         running = true;
 
+        motionTimer = new CustomTimer();
+        batteryTimer = new CustomTimer();
         motionTimer.setSec(1);
         batteryTimer.setSec(MAX_BATT_TIME);
         motionTimer.start();
         batteryTimer.start();
 
+        updateUIThread = new Thread(this::updateUIThreadRunnable);
+        updateSensorThread = new Thread(this::updateSensorThreadRunnable);
+        mainThread = new Thread(this::mainThreadRunnable);
         updateSensorThread.start();
         updateUIThread.start();
         mainThread.start();
