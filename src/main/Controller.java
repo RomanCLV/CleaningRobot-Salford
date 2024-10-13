@@ -11,6 +11,7 @@ import javafx.scene.control.Label;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
 import javafx.scene.image.PixelWriter;
+import javafx.concurrent.Task;
 
 import utils.*;
 
@@ -106,8 +107,8 @@ public class Controller implements IController {
     private boolean firstLeftWheelCall = true;
     private boolean firstRightWheelCall = true;
 
-    private char dir = 's'; // Direction.
-    private int vel = 5;    // Velocity.
+    private MotionDirections dir = MotionDirections.None; // Direction.
+    private final int vel = 5;    // Velocity.
     //endregion
 
     //region Camera variables declaration
@@ -166,8 +167,8 @@ public class Controller implements IController {
     private int MAX_BATT_TIME = 60 * 20; // Default 20 mins battery time.
     private final int MAX_BATT_VOLT = 12;      // volts.
 
-    private CustomTimer motionTimer;
-    private CustomTimer batteryTimer;
+    private Timer motionTimer;
+    private Timer batteryTimer;
     //endregion
 
     //region Threads variables declaration
@@ -201,11 +202,7 @@ public class Controller implements IController {
     }
 
     private void handleCloseEvent() {
-        disconnectToVrep();
-
-        System.out.println("cv close");
-        cvDestroyWindow(CAMERA_WND_NAME);
-        cvDestroyAllWindows();
+        kill();
     }
     //endregion
 
@@ -341,10 +338,12 @@ public class Controller implements IController {
         IntW sensorHandle = new IntW(1);
         String objectName = "Proximity_sensor" + sensor;
         vRep.simxGetObjectHandle(clientID, objectName, sensorHandle, remoteApi.simx_opmode_blocking);
-        if (firstSensorRead[sensor]) {
+        if (firstSensorRead[sensor])
+        {
             vRep.simxReadProximitySensor(clientID, sensorHandle.getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_streaming);
             firstSensorRead[sensor] = false;
-        } else {
+        }
+        else {
             vRep.simxReadProximitySensor(clientID, sensorHandle.getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_buffer);
         }
 
@@ -523,31 +522,31 @@ public class Controller implements IController {
     public void btnForwardPressed() {
         resetButtonsStyle();
         btnForward.setStyle("-fx-background-color: #7FFF00; ");
-        dir = 'f';
+        dir = MotionDirections.Forward;
     }
 
     public void btnBackwardPressed() {
         resetButtonsStyle();
         btnBack.setStyle("-fx-background-color: #7FFF00; ");
-        dir = 'b';
+        dir = MotionDirections.Backward;
     }
 
     public void btnLeftPressed() {
         resetButtonsStyle();
         btnLeft.setStyle("-fx-background-color: #7FFF00; ");
-        dir = 'l';
+        dir = MotionDirections.Left;
     }
 
     public void btnRightPressed() {
         resetButtonsStyle();
         btnRight.setStyle("-fx-background-color: #7FFF00; ");
-        dir = 'r';
+        dir = MotionDirections.Right;
     }
 
     public void btnStopPressed() {
         resetButtonsStyle();
         btnStop.setStyle("-fx-background-color: #7FFF00; ");
-        dir = 's';
+        dir = MotionDirections.Stop;
     }
 
     private void resetButtonsStyle() {
@@ -617,21 +616,22 @@ public class Controller implements IController {
         btnStopPressed();
     }
 
-    private void teleoperate(char dir, int vel) {
+    private void teleoperate(MotionDirections dir, int vel) {
         switch (dir) {
-            case 's':
-                move(vel = 0);
+            case Stop:
+                move(0);
+                this.dir = MotionDirections.None;
                 break;
-            case 'f':
+            case Forward:
                 move(+vel, 3000);
                 break;
-            case 'b':
+            case Backward:
                 move(-vel, 3000);
                 break;
-            case 'r':
+            case Right:
                 turnSpot(+(float)(vel / 2), 3000);
                 break;
-            case 'l':
+            case Left:
                 turnSpot(-(float)(vel / 2), 3000);
                 break;
         }
@@ -649,90 +649,189 @@ public class Controller implements IController {
 
     public void btnConnectPressed() {
         if (clientID == -1) {
-            if (connectToVrep())
-            {
-                btnConnect.setText("Connected");
-                btnConnect.setStyle("-fx-background-color: #7FFF00; ");
-                setup();
-            }
-            else {
-                btnConnect.setText("Failed");
-                btnConnect.setStyle("-fx-background-color: #FF0000; ");
-            }
+            btnConnect.setDisable(true);
+            btnConnect.setText("Connecting...");
+
+            // create a new task for to connection to not block the UI
+            Task<Boolean> task = new Task<Boolean>() {
+                @Override
+                protected Boolean call() throws Exception {
+                    return connectToVrep();
+                }
+
+                @Override
+                protected void succeeded() {
+                    boolean connected = getValue();
+                    btnConnect.setDisable(false);
+                    if (connected)
+                    {
+                        btnConnect.setText("Connected");
+                        btnConnect.setStyle("-fx-background-color: #7FFF00; ");
+                        setup();
+                    }
+                    else
+                    {
+                        btnConnect.setText("Failed");
+                        btnConnect.setStyle("-fx-background-color: #FF0000; ");
+                    }
+                }
+
+                @Override
+                protected void failed() {
+                    btnConnect.setDisable(false);
+                    btnConnect.setText("Failed");
+                    btnConnect.setStyle("-fx-background-color: #FF0000; ");
+                }
+            };
+
+            new Thread(task).start(); // run the task asynchronously
         }
         else {
-            btnConnect.setText("Connect");
+            btnConnect.setText("Disconnecting...");
             btnConnect.setStyle(defaultButtonStyle);
-            disconnectToVrep();
-            ImageViewer.dispose();
+            btnConnect.setDisable(true);
+
+            // creation of a task to disconnect properly and not block the UI
+            Task<Void> task = new Task<Void>() {
+                @Override
+                protected Void call() throws Exception {
+                    kill();
+                    return null;
+                }
+
+                @Override
+                protected void succeeded() {
+                    btnConnect.setDisable(false);
+                    btnConnect.setText("Connect");
+                }
+
+                @Override
+                protected void failed() {
+                    btnConnect.setDisable(false);
+                    btnConnect.setText("Connect");
+                }
+            };
+
+            // run the task asynchronously to not block the UI
+            new Thread(task).start();
         }
     }
 
-    private boolean connectToVrep() {
-        btnConnect.setDisable(true);
+
+    private boolean connectToVrep()
+    {
         clientID = vRep.simxStart(VREP_IPV4, VREP_PORT, true, true, 5000, 5);
-        btnConnect.setDisable(false);
         return clientID != -1;
     }
 
-    private void disconnectToVrep() {
-        running = false;
-        btnConnect.setDisable(true);
+    private void kill()
+    {
+        killTimers();
+        killThreads();
+        disconnectToVrep();
+        cvDestroyWindow(CAMERA_WND_NAME);
+        cvDestroyAllWindows();
+        ImageViewer.dispose();
+    }
 
-        if (motionTimer != null) motionTimer.stop();
-        if (batteryTimer != null) batteryTimer.stop();
-
-        try
+    private void killTimers()
+    {
+        if (motionTimer != null)
         {
-            Thread.sleep(500);
+            motionTimer.cancelAndPurge();
+            motionTimer = null;
         }
-        catch (InterruptedException e) {}
-
-        Platform.runLater(new Runnable() {
-            @Override
-            public void run() {
-                motionTimer = null;
-                batteryTimer = null;
-
-                updateUIThread = null;
-                updateSensorThread = null;
-                mainThread = null;
-
-                //vRep.simxStopSimulation(clientID, remoteApi.simx_opmode_blocking);
-                vRep.simxFinish(clientID);
-
-                clientID = -1;
-                btnConnect.setDisable(false);
-            }
-        });
+        if (batteryTimer != null)
+        {
+            batteryTimer.cancelAndPurge();
+            batteryTimer = null;
+        }
     }
 
-    private void setup() {
-        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_LEFT_WHEEL_NAME, leftWheelHandle, remoteApi.simx_opmode_blocking);
-        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_RIGHT_WHEEL_NAME, rightWheelHandle, remoteApi.simx_opmode_blocking);
-        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_VISION_SENSOR_NAME, cameraHandle, remoteApi.simx_opmode_blocking);
-
-        pw = canvasCamera.getGraphicsContext2D().getPixelWriter();
-        ImageViewer.open(resolutionCamera, resolutionCamera, CAMERA_WND_NAME);
-
-        running = true;
-
-        motionTimer = new CustomTimer();
-        batteryTimer = new CustomTimer();
-        motionTimer.setSec(1);
-        batteryTimer.setSec(MAX_BATT_TIME);
-        motionTimer.start();
-        batteryTimer.start();
-
-        updateUIThread = new Thread(this::updateUIThreadRunnable);
-        updateSensorThread = new Thread(this::updateSensorThreadRunnable);
-        mainThread = new Thread(this::mainThreadRunnable);
-        updateSensorThread.start();
-        updateUIThread.start();
-        mainThread.start();
+    private void killThreads()
+    {
+        running = false;
+        while (updateSensorThread.isAlive() ||
+                updateUIThread.isAlive() ||
+                mainThread.isAlive())
+        {
+            System.out.println("wait threads end");
+        }
+        System.out.println("All threads stopped");
+        updateUIThread = null;
+        updateSensorThread = null;
+        mainThread = null;
     }
 
-    private void updateUIThreadRunnable() {
+    private void disconnectToVrep()
+    {
+        //vRep.simxStopSimulation(clientID, remoteApi.simx_opmode_blocking);
+        vRep.simxFinish(clientID);
+        clientID = -1;
+    }
+
+    private boolean setup() {
+        boolean result = true;
+        if (running)
+        {
+            result = false;
+        }
+        else
+        {
+
+            vRep.simxGetObjectHandle(clientID, VREP_ROBOT_LEFT_WHEEL_NAME, leftWheelHandle, remoteApi.simx_opmode_blocking);
+            vRep.simxGetObjectHandle(clientID, VREP_ROBOT_RIGHT_WHEEL_NAME, rightWheelHandle, remoteApi.simx_opmode_blocking);
+            vRep.simxGetObjectHandle(clientID, VREP_ROBOT_VISION_SENSOR_NAME, cameraHandle, remoteApi.simx_opmode_blocking);
+
+            pw = canvasCamera.getGraphicsContext2D().getPixelWriter();
+            ImageViewer.open(resolutionCamera, resolutionCamera, CAMERA_WND_NAME);
+
+            dir = MotionDirections.None;
+            running = true;
+
+            initTimers(true);
+            initThreads(true);
+        }
+        return result;
+    }
+
+    private void initTimers(boolean start)
+    {
+        if (motionTimer == null)
+        {
+            motionTimer = new Timer();
+            motionTimer.setSec(1);
+            if (start) motionTimer.start();
+        }
+        if (batteryTimer == null)
+        {
+            batteryTimer = new Timer();
+            batteryTimer.setSec(MAX_BATT_TIME);
+            if (start) batteryTimer.start();
+        }
+    }
+
+    private void initThreads(boolean start)
+    {
+        if (updateSensorThread == null)
+        {
+            updateSensorThread = new Thread(this::updateSensorThreadRunnable);
+            if (start) updateSensorThread.start();
+        }
+        if (mainThread == null)
+        {
+            mainThread = new Thread(this::mainThreadRunnable);
+            if (start) mainThread.start();
+        }
+        if (updateUIThread == null)
+        {
+            updateUIThread = new Thread(this::updateUIThreadRunnable);
+            if (start) updateUIThread.start();
+        }
+    }
+
+    private void updateUIThreadRunnable()
+    {
         System.out.println("start update UI");
         while (running) {
             Platform.runLater(new Runnable() {
@@ -769,11 +868,13 @@ public class Controller implements IController {
         System.out.println("stop update UI");
     }
 
-    private void updateSensorThreadRunnable() {
+    private void updateSensorThreadRunnable()
+    {
         System.out.println("start update sensors");
 
         setBatteryTime(20); // set battery for 20 minutes
-        while (running) {
+        while (running)
+        {
             if (runGPS) {
                 gpsValues = readGPS();
             }
@@ -805,7 +906,8 @@ public class Controller implements IController {
         System.out.println("stop update sensors");
     }
 
-    private void mainThreadRunnable() {
+    private void mainThreadRunnable()
+    {
         System.out.println("start main");
         while (running) {
             requestAutomate();
@@ -814,7 +916,7 @@ public class Controller implements IController {
             if (!getBatteryState()) {
                 System.err.println("Error: Robot out of battery...");
                 move(0, 1000);
-                disconnectToVrep();
+                kill();
             }
             Delay.ms(1);
         }
@@ -854,7 +956,6 @@ public class Controller implements IController {
             case None:
                 break;
             case Initialize:
-                move(-vel, 3000);
                 requestState = States.Clean ;
                 break;
             case Clean:

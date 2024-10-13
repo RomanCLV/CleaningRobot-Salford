@@ -19,6 +19,7 @@ public class Timer
     private volatile boolean timerFlag   = true;
     private volatile boolean restartFlag = true;
     private java.util.Timer timer = new java.util.Timer();
+    private TimerTask task;
 
    /**
     * Method     : Timer::Timer()
@@ -27,39 +28,33 @@ public class Timer
     * Returns    : Nothing.
     * Notes      : None.
     **/
-    public Timer() { }
-
-   /**
-    * Method     : Timer::task
-    * Purpose    : The timer task.
-    * Parameters : None.
-    * Returns    : Nothing.
-    * Notes      : None.
-    **/
-    private TimerTask task = new TimerTask()
+    public Timer()
     {
-        @Override
-        public void run()
+        task = new TimerTask()
         {
-            if(timerFlag)
+            @Override
+            public void run()
             {
-                // Validate and setup restart:
-                if(restartFlag)
+                if (timerFlag)
                 {
-                    restartFlag = false;
-                    return;
-                }
+                    // Validate and setup restart:
+                    if (restartFlag)
+                    {
+                        restartFlag = false;
+                        return;
+                    }
 
-                // Run the timer setup:
-                if(counter == time)
-                {
-                    stop();
-                    return;
+                    // Run the timer setup:
+                    if (counter == time)
+                    {
+                        stop();
+                        return;
+                    }
+                    counter++;
                 }
-                counter++;
             }
-        }
-    };
+        };
+    }
 
    /**
     * Method     : Timer::start()
@@ -70,6 +65,8 @@ public class Timer
     **/
     public void start()
     {
+        counter = 0;
+        timerFlag = true;
         timer.scheduleAtFixedRate(task, 0, 1);
     }
 
@@ -122,6 +119,13 @@ public class Timer
     public synchronized void resume()
     {
         timerFlag = true;
+    }
+
+    public void cancelAndPurge()
+    {
+        stop();
+        timer.cancel(); // Cancel the timer
+        timer.purge(); // Remove all canceled tasks from the timer's task queue
     }
 
    /**
