@@ -33,8 +33,8 @@ public class ImageViewer
             dispose();
             editorFrame = new JFrame(title);
 
-            editorFrame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-            editorFrame.setDefaultCloseOperation(javax.swing.JFrame.EXIT_ON_CLOSE);
+            //editorFrame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+            editorFrame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
 
             editorFrame.setSize(width, height);
             editorFrame.setPreferredSize(new Dimension(width, height));

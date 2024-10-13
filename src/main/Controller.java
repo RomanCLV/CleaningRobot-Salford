@@ -751,12 +751,10 @@ public class Controller implements IController {
     private void killThreads()
     {
         running = false;
-        while (updateSensorThread.isAlive() ||
-                updateUIThread.isAlive() ||
-                mainThread.isAlive())
-        {
-            System.out.println("wait threads end");
-        }
+        while ((updateSensorThread != null && updateSensorThread.isAlive()) ||
+                (updateUIThread != null && updateUIThread.isAlive()) ||
+                (mainThread != null && mainThread.isAlive()));
+
         System.out.println("All threads stopped");
         updateUIThread = null;
         updateSensorThread = null;
