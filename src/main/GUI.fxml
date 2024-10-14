@@ -1,21 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.scene.canvas.*?>
-<?import java.lang.*?>
+<?import javafx.scene.canvas.Canvas?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.image.*?>
 <?import javafx.scene.layout.*?>
-<?import javafx.scene.text.*?>
-<?import javafx.scene.control.Button?>
-<?import javafx.scene.control.Label?>
-<?import javafx.scene.control.TextArea?>
-<?import javafx.scene.image.Image?>
-<?import javafx.scene.image.ImageView?>
-<?import javafx.scene.layout.AnchorPane?>
-<?import javafx.scene.layout.ColumnConstraints?>
-<?import javafx.scene.layout.GridPane?>
-<?import javafx.scene.layout.RowConstraints?>
 <?import javafx.scene.text.Font?>
+<?import javafx.scene.shape.Circle?>
 
 <AnchorPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
             prefHeight="512.0" prefWidth="1024.0"
@@ -24,8 +14,8 @@
     <GridPane layoutX="1.0" minHeight="10.0" minWidth="10.0" prefHeight="512.0" prefWidth="1009.0">
         <columnConstraints>
             <ColumnConstraints hgrow="SOMETIMES" maxWidth="523.0" minWidth="0.0" prefWidth="233.0"/>
-            <ColumnConstraints hgrow="SOMETIMES" maxWidth="512.0" minWidth="0.0" prefWidth="327.0"/>
-            <ColumnConstraints hgrow="SOMETIMES" maxWidth="259.0" minWidth="10.0" prefWidth="99.0"/>
+            <ColumnConstraints hgrow="SOMETIMES" maxWidth="512.0" minWidth="0.0" prefWidth="300.0"/>
+            <ColumnConstraints hgrow="SOMETIMES" maxWidth="259.0" minWidth="10.0" prefWidth="126.0"/>
             <ColumnConstraints hgrow="SOMETIMES" maxWidth="389.0" minWidth="10.0" prefWidth="305.0"/>
         </columnConstraints>
         <rowConstraints>
@@ -33,25 +23,37 @@
             <RowConstraints maxHeight="630.0" minHeight="10.0" prefHeight="295.0" vgrow="SOMETIMES"/>
             <RowConstraints maxHeight="477.0" minHeight="10.0" prefHeight="149.0" vgrow="SOMETIMES"/>
         </rowConstraints>
+
         <Button fx:id="btnConnect" mnemonicParsing="false" onAction="#btnConnectPressed" prefHeight="48.0"
                 prefWidth="124.0" text="Connect" GridPane.halignment="CENTER" GridPane.valignment="CENTER"/>
-        <Label text="GPS" GridPane.halignment="CENTER" GridPane.rowIndex="2" GridPane.valignment="CENTER">
-            <font>
-                <Font name="System Bold" size="30.0"/>
-            </font>
-        </Label>
-        <Label layoutX="700.0" layoutY="14.0" text="Camera" GridPane.columnIndex="1" GridPane.halignment="CENTER"
-               GridPane.valignment="CENTER">
-            <font>
-                <Font name="System Bold" size="30.0"/>
-            </font>
-        </Label>
-        <Label layoutX="834.0" layoutY="13.0" text="Wheels" GridPane.columnIndex="2" GridPane.halignment="CENTER"
-               GridPane.rowIndex="2" GridPane.valignment="CENTER">
-            <font>
-                <Font name="System Bold" size="30.0"/>
-            </font>
-        </Label>
+
+        <HBox alignment="CENTER" GridPane.rowIndex="2">
+            <Circle fx:id="gpsLed" radius="7.0" fill="darkgray"/>
+            <Label text="  GPS">
+                <font>
+                    <Font name="System Bold" size="30.0"/>
+                </font>
+            </Label>
+        </HBox>
+
+        <HBox alignment="CENTER" GridPane.columnIndex="1">
+            <Circle fx:id="cameraLed" radius="7.0" fill="darkgray"/>
+            <Label text="  Camera"><!--layoutX="700.0" layoutY="14.0" -->
+                <font>
+                    <Font name="System Bold" size="30.0"/>
+                </font>
+            </Label>
+        </HBox>
+
+        <HBox alignment="CENTER" GridPane.columnIndex="2" GridPane.rowIndex="2">
+            <Circle fx:id="wheelsLed" radius="7.0" fill="darkgray"/>
+            <Label text="  Wheels"> <!--layoutX="834.0" layoutY="13.0"  -->
+                <font>
+                    <Font name="System Bold" size="30.0"/>
+                </font>
+            </Label>
+        </HBox>
+
         <GridPane prefWidth="0.0" GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER">
             <columnConstraints>
                 <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="100.0"/>
@@ -115,38 +117,64 @@
                 </graphic>
             </Button>
         </GridPane>
+
         <Canvas fx:id="canvasCamera" height="256.0" width="256.0" GridPane.columnIndex="1"
                 GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="TOP"/>
+
         <ImageView fitHeight="150.0" fitWidth="200.0" pickOnBounds="true" preserveRatio="true"
                    GridPane.columnIndex="3" GridPane.halignment="CENTER" GridPane.rowIndex="1"
                    GridPane.valignment="CENTER">
             <Image url="@../img/Roomba.png"/>
         </ImageView>
-        <Label fx:id="lblSensor0" text="0" translateX="-95.0" translateY="-5.0" GridPane.columnIndex="3"
-               GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER"/>
-        <Label fx:id="lblSensor1" text="0" translateX="-80.0" translateY="-55.0" GridPane.columnIndex="3"
-               GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER"/>
-        <Label fx:id="lblSensor2" text="0" translateX="-35.0" translateY="-85.0" GridPane.columnIndex="3"
-               GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER"/>
-        <Label fx:id="lblSensor3" text="0" translateX="30.0" translateY="-85.0" GridPane.columnIndex="3"
-               GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER"/>
-        <Label fx:id="lblSensor4" text="0" translateX="72.0" translateY="-55.0" GridPane.columnIndex="3"
-               GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER"/>
-        <Label fx:id="lblSensor5" text="0" translateX="90.0" translateY="-5.0" GridPane.columnIndex="3"
-               GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER"/>
-        <Label fx:id="lblGpsX" layoutX="806.0" layoutY="200.0" text="X : " translateX="20.0" translateY="-30.0"
+
+        <HBox alignment="CENTER" translateX="-105.0" translateY="-5.0" GridPane.columnIndex="3" GridPane.rowIndex="1">
+            <Circle fx:id="sonar0Led" radius="4.0" fill="darkgray" />
+            <Label fx:id="lblSensor0" text=" 0.0m" />
+        </HBox>
+
+        <HBox alignment="CENTER" translateX="-85.0" translateY="-55.0" GridPane.columnIndex="3" GridPane.rowIndex="1">
+            <Circle fx:id="sonar1Led" radius="4.0" fill="darkgray" />
+            <Label fx:id="lblSensor1" text=" 0.0m" />
+        </HBox>
+
+        <HBox alignment="CENTER" translateX="-40.0" translateY="-85.0" GridPane.columnIndex="3" GridPane.rowIndex="1">
+            <Circle fx:id="sonar2Led" radius="4.0" fill="darkgray" />
+            <Label fx:id="lblSensor2" text=" 0.0m" />
+        </HBox>
+
+        <HBox alignment="CENTER" translateX="30.0" translateY="-85.0" GridPane.columnIndex="3" GridPane.rowIndex="1">
+            <Circle fx:id="sonar3Led" radius="4.0" fill="darkgray" />
+            <Label fx:id="lblSensor3" text=" 0.0m" />
+        </HBox>
+
+        <HBox alignment="CENTER" translateX="82.0" translateY="-55.0" GridPane.columnIndex="3" GridPane.rowIndex="1">
+            <Circle fx:id="sonar4Led" radius="4.0" fill="darkgray" />
+            <Label fx:id="lblSensor4" text=" 0.0m" />
+        </HBox>
+
+        <HBox alignment="CENTER" translateX="100.0" translateY="-5.0" GridPane.columnIndex="3" GridPane.rowIndex="1">
+            <Circle fx:id="sonar5Led" radius="4.0" fill="darkgray" />
+            <Label fx:id="lblSensor5" text=" 0.0m" />
+        </HBox>
+
+        <Label fx:id="lblGpsX" layoutX="806.0" layoutY="200.0" text="X:" translateX="20.0" translateY="-30.0"
                GridPane.columnIndex="1" GridPane.halignment="LEFT" GridPane.rowIndex="2"
                GridPane.valignment="CENTER"/>
-        <Label fx:id="lblGpsY" layoutX="292.0" layoutY="388.0" text="Y : " translateX="20.0" GridPane.columnIndex="1"
+        <Label fx:id="lblGpsY" layoutX="292.0" layoutY="388.0" text="Y:" translateX="20.0" GridPane.columnIndex="1"
                GridPane.halignment="LEFT" GridPane.rowIndex="2" GridPane.valignment="CENTER"/>
-        <Label fx:id="lblGpsZ" layoutX="292.0" layoutY="388.0" text="Z : " translateX="20.0" translateY="30.0"
+        <Label fx:id="lblGpsZ" layoutX="292.0" layoutY="388.0" text="Z:" translateX="20.0" translateY="30.0"
                GridPane.columnIndex="1" GridPane.halignment="LEFT" GridPane.rowIndex="2"
                GridPane.valignment="CENTER"/>
-        <Label fx:id="lblRightWheel" layoutX="806.0" layoutY="200.0" text="Right : " translateX="10.0"
-               translateY="-30.0" GridPane.columnIndex="3" GridPane.halignment="LEFT" GridPane.rowIndex="2"
-               GridPane.valignment="CENTER"/>
-        <Label fx:id="lblLeftWheel" layoutX="689.0" layoutY="388.0" text="Left : " translateX="10.0"
-               translateY="30.0" GridPane.columnIndex="3" GridPane.halignment="LEFT" GridPane.rowIndex="2"
-               GridPane.valignment="CENTER"/>
+
+        <HBox alignment="CENTER" translateX="-100.0" translateY="-30.0" GridPane.columnIndex="3" GridPane.rowIndex="2">
+            <Circle fx:id="rightWheelLed" radius="4.0" fill="darkgray" />
+            <Label fx:id="lblRightWheel" text=" Right:" />
+        </HBox>
+
+        <HBox alignment="CENTER" translateX="-100.0" translateY="30.0" GridPane.columnIndex="3" GridPane.rowIndex="2">
+            <Circle fx:id="leftWheelLed" radius="4.0" fill="darkgray" />
+            <Label fx:id="lblLeftWheel" text=" Left:" />
+        </HBox>
+
     </GridPane>
 </AnchorPane>

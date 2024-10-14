@@ -5,6 +5,7 @@ import com.googlecode.javacv.cpp.opencv_core;
 
 import javafx.fxml.FXML;
 import javafx.application.Platform;
+import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 import javafx.stage.WindowEvent;
 import javafx.scene.control.Label;
@@ -17,13 +18,16 @@ import utils.*;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferByte;
+import java.awt.image.DataBufferInt;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import static com.googlecode.javacv.cpp.opencv_core.*;
 import static com.googlecode.javacv.cpp.opencv_highgui.cvDestroyAllWindows;
 import static com.googlecode.javacv.cpp.opencv_highgui.cvDestroyWindow;
 import static com.googlecode.javacv.cpp.opencv_highgui.cvLoadImage;
-import static com.googlecode.javacv.cpp.opencv_imgproc.cvMatchTemplate;
-import static com.googlecode.javacv.cpp.opencv_imgproc.CV_TM_CCOEFF_NORMED;
+import static com.googlecode.javacv.cpp.opencv_imgproc.*;
 
 /**
  * Created by Theo Theodoridis.
@@ -53,8 +57,6 @@ public class Controller implements IController {
     @FXML
     private Canvas canvasCamera;
     @FXML
-    PixelWriter pw;
-    @FXML
     private Label lblSensor0;
     @FXML
     private Label lblSensor1;
@@ -67,7 +69,27 @@ public class Controller implements IController {
     @FXML
     private Label lblSensor5;
     @FXML
-    private Label lbl;
+    private Circle sonar0Led;
+    @FXML
+    private Circle sonar1Led;
+    @FXML
+    private Circle sonar2Led;
+    @FXML
+    private Circle sonar3Led;
+    @FXML
+    private Circle sonar4Led;
+    @FXML
+    private Circle sonar5Led;
+    @FXML
+    private Circle gpsLed;
+    @FXML
+    private Circle cameraLed;
+    @FXML
+    private Circle wheelsLed;
+    @FXML
+    private Circle rightWheelLed;
+    @FXML
+    private Circle leftWheelLed;
     @FXML
     private Label lblGpsX;
     @FXML
@@ -80,23 +102,36 @@ public class Controller implements IController {
     private Label lblLeftWheel;
 
     private String defaultButtonStyle;
+    private Circle[] sonarLeds = new Circle[6];
+    private PixelWriter pw;
 
+    private final static javafx.scene.paint.Color GREEN_LED = javafx.scene.paint.Color.CHARTREUSE;
+    private final static javafx.scene.paint.Color RED_LED = javafx.scene.paint.Color.RED;
+    private final static javafx.scene.paint.Color ORANGE_LED = javafx.scene.paint.Color.ORANGE;
+    private final static javafx.scene.paint.Color GRAY_LED = javafx.scene.paint.Color.DARKGRAY;
     //endregion
 
     //region Sensors variables declaration
     private final int SONARS_NUMBER = 6;
     private final int WHEEL_NUMBER = 2; // LEFT-RIGHT
     private final int GPS_NUMBER = 3; // XYZ
-    private Color[][] imageCamera;
     private double[] gpsValues = new double[GPS_NUMBER];
     private double[] sonarValues = new double[SONARS_NUMBER];
     private final double[] encoderValues = new double[WHEEL_NUMBER];
 
-    private boolean runWheelEncoder = false;
-    private boolean runMotion = false;
-    private boolean runCamera = false;
-    private boolean runGPS = false;
-    private boolean runSonars = false;
+    private boolean runLeftWheelEncoder;
+    private boolean runRightWheelEncoder;
+    private boolean runWheelEncoder;
+    private boolean runMotion;
+    private boolean runCamera;
+    private boolean runGPS;
+    private boolean runAtLeastOneSonar;
+
+    private boolean runningStateLeftWheelIsOK;
+    private boolean runningStateRightWheelIsOK;
+    private boolean runningStateCameraIsOK;
+    private boolean runningStateGPSIsOK;
+    private final boolean[] runningStateSonars = new boolean[SONARS_NUMBER];
 
     private final IntW cameraHandle = new IntW(-1);
     private final IntW gpsHandle = new IntW(-1);
@@ -120,13 +155,11 @@ public class Controller implements IController {
     private double targetMinScore = 0.0;
     private double targetMaxScore = 0.0;
 
-    private int resolutionCamera = 256;
-    private CvPoint point = new CvPoint();
-    private IntWA resolution = new IntWA(1);
-    private CharWA image = new CharWA(resolutionCamera * resolutionCamera * 3);
-    private char[] imageArray = new char[resolutionCamera * resolutionCamera * 3];
-    private Color[][] colorMatrix = new Color[resolutionCamera][resolutionCamera];
-    private BufferedImage bufferedImage = new BufferedImage(resolutionCamera, resolutionCamera, BufferedImage.TYPE_INT_RGB);
+    private final int resolutionCamera = 256;
+    private final CvPoint target = new CvPoint();
+    private final IntWA resolution = new IntWA(1);
+    private final CharWA image = new CharWA(resolutionCamera * resolutionCamera * 3);
+    private BufferedImage bufferedImageRGB;
 
     private IplImage markerImage;
     //endregion
@@ -163,10 +196,11 @@ public class Controller implements IController {
 
     private final String VREP_ROBOT_NAME = "Roomba";
     private final String VREP_ROBOT_LEFT_WHEEL_NAME = "JointLeftWheel";
-    private final String VREP_ROBOT_RIGHT_WHEEL_NAME = "JointRightWheel";
+    private final String VREP_ROBOT_RIGHT_WHEEL_NAME = "JointRightWheel";//"FHkfhkf";
     private final String VREP_ROBOT_VISION_SENSOR_NAME = "Vision_sensor";
     private final String VREP_ROBOT_BASE_SONAR_NAME = "Proximity_sensor";
-    private final String CAMERA_WND_NAME = "Camera";
+
+    private final float MARKER_THRESHOLD = 0.4f;
     //endregion
 
     //region Timers variables declaration
@@ -230,7 +264,8 @@ public class Controller implements IController {
 
     //region Wheel methods
     private double readRightWheelEnc() {
-        vRep.simxGetJointPosition(clientID, rightWheelHandle.getValue(), robotRightJointPosition, remoteApi.simx_opmode_buffer);
+        int result = vRep.simxGetJointPosition(clientID, rightWheelHandle.getValue(), robotRightJointPosition, remoteApi.simx_opmode_buffer);
+        runningStateRightWheelIsOK = result != remoteApi.simx_return_remote_error_flag;
         currentRightJointPosition = robotRightJointPosition.getValue();
         dxRight = getAngleMinusAlpha(currentRightJointPosition, previousRightJointPosition);
         totalRightJointPosition += dxRight;
@@ -240,7 +275,8 @@ public class Controller implements IController {
     }
 
     private double readLeftWheelEnc() {
-        vRep.simxGetJointPosition(clientID, leftWheelHandle.getValue(), robotLeftJointPosition, remoteApi.simx_opmode_buffer);
+        int result = vRep.simxGetJointPosition(clientID, leftWheelHandle.getValue(), robotLeftJointPosition, remoteApi.simx_opmode_buffer);
+        runningStateLeftWheelIsOK = result != remoteApi.simx_return_remote_error_flag;
         currentLeftJointPosition = robotLeftJointPosition.getValue();
         dxLeft = getAngleMinusAlpha(currentLeftJointPosition, previousLeftJointPosition);
         totalLeftJointPosition += dxLeft;
@@ -275,7 +311,9 @@ public class Controller implements IController {
     //region GPS methods
     private double[] readGPS() {
         FloatWA position = new FloatWA(3);
-        vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
+        int result = vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_blocking); //remoteApi.simx_opmode_streaming
+        runningStateGPSIsOK = result != remoteApi.simx_return_remote_error_flag;
+
         double[] positions = new double[position.getArray().length];
 
         positions[0] = Math.round((VREP_SENS_AXIS_X * (double) position.getArray()[0] + VREP_START_POS_X) * 100.0) / 100.0;
@@ -308,7 +346,8 @@ public class Controller implements IController {
         IntW detectedObjectHandle = new IntW(1);
         FloatWA detectedSurfaceNormalVector = new FloatWA(1);
 
-        vRep.simxReadProximitySensor(clientID, sonarsHandles[sensor].getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_buffer);
+        int result = vRep.simxReadProximitySensor(clientID, sonarsHandles[sensor].getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_buffer);
+        runningStateSonars[sensor] = result != remoteApi.simx_return_remote_error_flag;
 
         float[] detectedPointXYZ = detectedPoint.getArray();
         double distance = Math.sqrt(Math.pow(detectedPointXYZ[0], 2) + Math.pow(detectedPointXYZ[1], 2) + Math.pow(detectedPointXYZ[2], 2));
@@ -325,7 +364,7 @@ public class Controller implements IController {
     private double[] readSonars() {
         for (int i = 0; i < getSonarNo(); i++)
         {
-            if (sonarsHandles[i].getValue() != -1)
+            if (sonarsHandles[i].getValue() != remoteApi.simx_return_remote_error_flag)
             {
                 sonarValues[i] = readSonarRange(i);
             }
@@ -346,87 +385,63 @@ public class Controller implements IController {
     }
     //endregion
 
+    private volatile boolean isComputingTheImage = false;
+
     //region Camera methods
-    private Color[][] readCamera() {
-        vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_buffer);
-        return (imageToColor(image));
+    private void readCamera() {
+        int result = vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_buffer);
+        runningStateCameraIsOK = result != remoteApi.simx_return_remote_error_flag;
+        if (!isComputingTheImage)
+            bufferedImageRGB = charWAtoBufferedImage(image);
     }
 
-    private Color[][] imageToColor(CharWA image) {
-        imageArray = image.getArray();
+    private BufferedImage charWAtoBufferedImage(CharWA image) {
+        char[] imageArray = image.getArray();
+        BufferedImage bufferedImage = new BufferedImage(resolutionCamera, resolutionCamera, BufferedImage.TYPE_INT_RGB);
         int index = 0;
         int r, g, b;
-        Color color;
-
-        for (int i = 0; i < resolutionCamera; i++)
-            for (int j = 0; j < resolutionCamera; j++) {
-                // Retrieve the RGB Values:
-                r = (int) imageArray[index];
-                g = (int) imageArray[index + 1];
-                b = (int) imageArray[index + 2];
-                color = new Color(r, g, b);
-                colorMatrix[i][j] = color;
-
-                bufferedImage.setRGB(i, j, new Color(r, g, b).getRGB());
+        for (int y = 0; y < resolutionCamera; y++) {
+            for (int x = 0; x < resolutionCamera; x++) {
+                r = (int) imageArray[index] & 0xFF;
+                g = (int) imageArray[index + 1] & 0xFF;
+                b = (int) imageArray[index + 2] & 0xFF;
+                int rgb = (r << 16) | (g << 8) | b;
+                bufferedImage.setRGB(x, resolutionCamera - 1 - y, rgb);
                 index += 3;
             }
-        return (colorMatrix);
+        }
+        return bufferedImage;
+    }
+
+    private BufferedImage bufferedImageToGray(BufferedImage image) {
+        BufferedImage grayImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_BYTE_GRAY);
+        for (int i = 0; i < image.getWidth(); i++) {
+            for (int j = 0; j < image.getHeight(); j++) {
+                int rgb = image.getRGB(i, j);
+                Color color = new Color(rgb);
+                int grayLevel = (int) (0.299 * color.getRed() + 0.587 * color.getGreen() + 0.114 * color.getBlue());
+                int grayRgb = new Color(grayLevel, grayLevel, grayLevel).getRGB();
+                grayImage.setRGB(i, j, grayRgb);
+            }
+        }
+
+        return grayImage;  // Retourner l'image en niveaux de gris
     }
 
     private int getGrayscale(BufferedImage img, int x, int y) {
-        Color c = new Color(img.getRGB(x, y));
+        java.awt.Color c = new java.awt.Color(img.getRGB(x, y));
         int r = (int) (c.getRed() * 0.299);
         int g = (int) (c.getGreen() * 0.587);
         int b = (int) (c.getBlue() * 0.114);
-        return ((r + g + b));
-    }
-
-    private static BufferedImage rotate(BufferedImage bimg, double angle, boolean color) {
-        // [1]Get image dimensions:
-        int imageType = -1;
-        int w = bimg.getWidth();
-        int h = bimg.getHeight();
-
-        // [2]Select image type: color/grayscale
-        if (color) imageType = bimg.getType();
-        else imageType = BufferedImage.TYPE_BYTE_GRAY;
-
-        // [3]Rotate and draw:
-        BufferedImage rotated = new BufferedImage(w, h, imageType);
-        Graphics2D graphic = rotated.createGraphics();
-        graphic.rotate(Math.toRadians(angle), (double)w / 2, (double)h / 2);
-        graphic.drawImage(bimg, null, 0, 0);
-        graphic.dispose();
-
-        return (rotated);
-    }
-
-    private BufferedImage getImage() {
-        return (rotate(bufferedImage, -90, false));
-    }
-
-    private int getImageWidth() {
-        return (bufferedImage.getWidth());
-    }
-
-    private int getImageHeight() {
-        return (bufferedImage.getHeight());
-    }
-
-    private int getImagePixel(int x, int y) {
-        return (getGrayscale(bufferedImage, x, y));
-    }
-
-    private void setImagePixel(int x, int y, int rgb) {
-        bufferedImage.setRGB(x, y, rgb + (rgb << 8) + (rgb << 16));
+        return r + g + b;
     }
 
     private int getTargetX() {
-        return (point.x());
+        return (target.x());
     }
 
     private int getTargetY() {
-        return (point.y());
+        return (target.y());
     }
 
     private double getTargetMinScore() {
@@ -437,47 +452,102 @@ public class Controller implements IController {
         return (targetMaxScore);
     }
 
-    private void displayImage() {
-        ImageViewer.display(getImage());
+    private void displayBufferedImage(BufferedImage bufferedImage) {
+        double width = bufferedImage.getWidth();
+        double height = bufferedImage.getHeight();
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                int rgb = bufferedImage.getRGB(x, y);
+                int r = (rgb >> 16) & 0xFF;
+                int g = (rgb >> 8) & 0xFF;
+                int b = rgb & 0xFF;
+                javafx.scene.paint.Color fxColor = javafx.scene.paint.Color.rgb(r, g, b);
+                pw.setColor(x, y, fxColor);
+            }
+        }
     }
 
-    private void templateMatchingCV(BufferedImage image) {
-        // [1]Load source and template image files:
-        IplImage src = IplImage.create(image.getWidth(), image.getHeight(), opencv_core.IPL_DEPTH_8U, 1);
-        src.copyFrom(image);
-
-
-        // [2]The Correlation Image Result:
+    private CvPoint findMarker(IplImage src) {
         IplImage result = cvCreateImage(cvSize(src.width() - markerImage.width() + 1, src.height() - markerImage.height() + 1), IPL_DEPTH_32F, 1);
 
-        // [3]Select a function template-match method:
-        //cvMatchTemplate(src, tmp, result, CV_TM_CCORR_NORMED);  //1*
-        cvMatchTemplate(src, markerImage, result, CV_TM_CCOEFF_NORMED);   //5*
+        if (src.width() < markerImage.width() || src.height() < markerImage.height()) {
+            System.out.println("Invalid dimensions.");
+            return null;
+        }
 
-        double min_val[] = new double[2];
-        double max_val[] = new double[2];
+        cvMatchTemplate(src, markerImage, result, CV_TM_CCOEFF_NORMED);
 
-        // [4]Max and Min correlation point locations:
+        double[] minVal = new double[1];
+        double[] maxVal = new double[1];
         CvPoint minLoc = new CvPoint();
         CvPoint maxLoc = new CvPoint();
+        cvMinMaxLoc(result, minVal, maxVal, minLoc, maxLoc, null);
 
-        // [5]Compute and print min-max value locations:
-        cvMinMaxLoc(result, min_val, max_val, minLoc, maxLoc, null);
-        targetMinScore = min_val[0]; // Min Score.
-        targetMaxScore = max_val[0]; // Max Score.
-        //System.out.println("Min: " + targetMin);
-        //System.out.println("Max: " + targetMax);
-
-        // [6]Mark at point the image template coordinates:
-        point.x(maxLoc.x() + markerImage.width());
-        point.y(maxLoc.y() + markerImage.height());
-
-        // [7]Draw the rectangle result in source image:
-        cvRectangle(src, maxLoc, point, CvScalar.GRAY, 2, 8, 0);
-
-        // [8]Display the image:
-        ImageViewer.display(src.getBufferedImage());
+        if (maxVal[0] > MARKER_THRESHOLD) {
+            target.x(maxLoc.x() + markerImage.width() / 2);
+            target.y(maxLoc.y() + markerImage.height() / 2);
+            return maxLoc;
+        }
+        return null;
     }
+
+    private void drawRectangle(IplImage image, CvPoint matchLocation) {
+        cvRectangle(image, matchLocation,
+                cvPoint(matchLocation.x() + markerImage.width(), matchLocation.y() + markerImage.height()),
+                CvScalar.RED, 2, 8, 0);
+    }
+
+    private IplImage bufferedImageToIplImage(BufferedImage bufferedImage) {
+        int width = bufferedImage.getWidth();
+        int height = bufferedImage.getHeight();
+        int channels = (bufferedImage.getType() == BufferedImage.TYPE_INT_RGB || bufferedImage.getType() == BufferedImage.TYPE_INT_ARGB) ? 3 : 1;
+
+        IplImage iplImage = IplImage.create(width, height, IPL_DEPTH_8U, channels);
+
+        ByteBuffer buffer = iplImage.getByteBuffer();
+        if (buffer.capacity() < width * height * channels) {
+            System.out.println("Buffer capacity is not sufficient for the image.");
+            return null;
+        }
+
+        if (bufferedImage.getType() == BufferedImage.TYPE_INT_RGB || bufferedImage.getType() == BufferedImage.TYPE_INT_ARGB) {
+            int[] data = ((DataBufferInt) bufferedImage.getRaster().getDataBuffer()).getData();
+            byte[] byteData = new byte[width * height * 3]; // pour RGB
+            for (int i = 0; i < data.length; i++) {
+                byteData[i * 3] = (byte) ((data[i] >> 16) & 0xFF);  // Red
+                byteData[i * 3 + 1] = (byte) ((data[i] >> 8) & 0xFF);   // Green
+                byteData[i * 3 + 2] = (byte) (data[i] & 0xFF);           // Blue
+            }
+            buffer.put(byteData);
+        }
+        else if (bufferedImage.getType() == BufferedImage.TYPE_3BYTE_BGR) {
+            byte[] data = ((DataBufferByte) bufferedImage.getRaster().getDataBuffer()).getData();
+            buffer.put(data);
+        }
+        else if (bufferedImage.getType() == BufferedImage.TYPE_BYTE_GRAY) {
+            byte[] data = ((DataBufferByte) bufferedImage.getRaster().getDataBuffer()).getData();
+            buffer.put(data);
+        }
+        else {
+            System.out.println("Unsupported BufferedImage type: " + bufferedImage.getType());
+            return null;
+        }
+
+        return iplImage;
+    }
+
+    private BufferedImage iplImageToBufferedImage(IplImage iplImage) {
+        int width = iplImage.width();
+        int height = iplImage.height();
+        int channels = iplImage.nChannels();
+        byte[] data = new byte[width * height * channels];
+        iplImage.getByteBuffer().get(data);
+
+        BufferedImage image = new BufferedImage(width, height, channels == 3 ? BufferedImage.TYPE_3BYTE_BGR : BufferedImage.TYPE_BYTE_GRAY);
+        image.getRaster().setDataElements(0, 0, width, height, data);
+        return image;
+    }
+
     //endregion
 
     //region Motion Methods
@@ -555,16 +625,16 @@ public class Controller implements IController {
                 this.dir = MotionDirections.None;
                 break;
             case Forward:
-                move(+vel, 3000);
+                move(+vel);
                 break;
             case Backward:
-                move(-vel, 3000);
+                move(-vel);
                 break;
             case Right:
-                turnSpot(+(float)(vel / 2), 3000);
+                turnSpot(+(float)(vel / 2));
                 break;
             case Left:
-                turnSpot(-(float)(vel / 2), 3000);
+                turnSpot(-(float)(vel / 2));
                 break;
         }
     }
@@ -629,6 +699,7 @@ public class Controller implements IController {
         btnConnect.setText("Disconnecting...");
         btnConnect.setStyle(defaultButtonStyle);
         btnConnect.setDisable(true);
+        setDisableAllMotionButtons(true);
 
         // creation of a task to disconnect properly and not block the UI
         Task<Void> task = new Task<Void>() {
@@ -638,16 +709,22 @@ public class Controller implements IController {
                 return null;
             }
 
-            @Override
-            protected void succeeded() {
+            private void end()
+            {
                 btnConnect.setDisable(false);
                 btnConnect.setText("Connect");
+                resetUILabels();
+                resetUILeds();
+            }
+
+            @Override
+            protected void succeeded() {
+                end();
             }
 
             @Override
             protected void failed() {
-                btnConnect.setDisable(false);
-                btnConnect.setText("Connect");
+                end();
             }
         };
 
@@ -684,6 +761,56 @@ public class Controller implements IController {
         btnStop.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Stop;
     }
+
+    private void resetUILabels()
+    {
+        lblSensor0.setText(" 0.0m");
+        lblSensor1.setText(" 0.0m");
+        lblSensor2.setText(" 0.0m");
+        lblSensor3.setText(" 0.0m");
+        lblSensor4.setText(" 0.0m");
+        lblSensor5.setText(" 0.0m");
+
+        lblGpsX.setText("X:");
+        lblGpsY.setText("Y:");
+        lblGpsZ.setText("Z:");
+
+        lblRightWheel.setText(" Right:");
+        lblLeftWheel.setText(" Left:");
+    }
+
+    private void resetUILeds()
+    {
+        cameraLed.setFill(GRAY_LED);
+        gpsLed.setFill(GRAY_LED);
+        rightWheelLed.setFill(GRAY_LED);
+        leftWheelLed.setFill(GRAY_LED);
+        wheelsLed.setFill(GRAY_LED);
+        for (Circle sonarLed : sonarLeds) {
+            sonarLed.setFill(GRAY_LED);
+        }
+    }
+
+    private void setDisableAllMotionButtons(boolean setDisable)
+    {
+        btnForward.setDisable(setDisable);
+        btnBack.setDisable(setDisable);
+        btnRight.setDisable(setDisable);
+        btnLeft.setDisable(setDisable);
+        btnStop.setDisable(setDisable);
+    }
+
+    private void updateLeds()
+    {
+        for (int i = 0; i < SONARS_NUMBER; i++) {
+            sonarLeds[i].setFill(runningStateSonars[i] ? javafx.scene.paint.Color.CHARTREUSE : javafx.scene.paint.Color.RED);
+        }
+        rightWheelLed.setFill(runningStateRightWheelIsOK ? GREEN_LED :  RED_LED);
+        leftWheelLed.setFill(runningStateLeftWheelIsOK ? GREEN_LED :  RED_LED);
+        wheelsLed.setFill((runningStateRightWheelIsOK && runningStateLeftWheelIsOK) ? GREEN_LED : ((runningStateRightWheelIsOK || runningStateLeftWheelIsOK) ? ORANGE_LED : RED_LED));
+        cameraLed.setFill(runningStateCameraIsOK ? GREEN_LED :  RED_LED);
+        gpsLed.setFill(runningStateGPSIsOK ? GREEN_LED :  RED_LED);
+    }
     //endregion
 
     //region Generic Methods
@@ -702,11 +829,21 @@ public class Controller implements IController {
     }
 
     @Override
-    public void init() {
+    public void init()
+    {
         defaultButtonStyle = btnForward.getStyle();
         markerImage = cvLoadImage("data/images/marker.jpg", 0);
+        pw = canvasCamera.getGraphicsContext2D().getPixelWriter();
         vRep = new remoteApi();
         vRep.simxFinish(-1); // close all simulations... to be sure
+
+        sonarLeds[0] = sonar0Led;
+        sonarLeds[1] = sonar1Led;
+        sonarLeds[2] = sonar2Led;
+        sonarLeds[3] = sonar3Led;
+        sonarLeds[4] = sonar4Led;
+        sonarLeds[5] = sonar5Led;
+        setDisableAllMotionButtons(true);
     }
 
     private boolean connectToVrep()
@@ -717,9 +854,6 @@ public class Controller implements IController {
 
     private void kill()
     {
-        cvDestroyWindow(CAMERA_WND_NAME);
-        cvDestroyAllWindows();
-        ImageViewer.dispose();
         killTimers();
         killThreads();
         disconnectToVrep();
@@ -762,14 +896,13 @@ public class Controller implements IController {
         }
     }
 
-    private void setup() {
+    private void setup()
+    {
         if (!running)
         {
             setupSensors();
             firstReadAllSensors();
-
-            pw = canvasCamera.getGraphicsContext2D().getPixelWriter();
-            ImageViewer.open(resolutionCamera, resolutionCamera, CAMERA_WND_NAME);
+            setDisableAllMotionButtons(!runMotion);
 
             dir = MotionDirections.None;
             running = true;
@@ -781,7 +914,7 @@ public class Controller implements IController {
 
     private void setupSensors()
     {
-        // reset handles and config
+        // reset handles
         gpsHandle.setValue(-1);
         cameraHandle.setValue(-1);
         leftWheelHandle.setValue(-1);
@@ -797,59 +930,79 @@ public class Controller implements IController {
                 sonarsHandles[i].setValue(-1);
             }
         }
+        runLeftWheelEncoder = false;
+        runRightWheelEncoder = false;
         runWheelEncoder = false;
         runMotion = false;
         runCamera = false;
         runGPS = false;
-        runSonars = false;
+        runAtLeastOneSonar = false;
+        Arrays.fill(runningStateSonars, false);
 
-        // connect handle
-        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_LEFT_WHEEL_NAME, leftWheelHandle, remoteApi.simx_opmode_blocking);
-        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_RIGHT_WHEEL_NAME, rightWheelHandle, remoteApi.simx_opmode_blocking);
-        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_VISION_SENSOR_NAME, cameraHandle, remoteApi.simx_opmode_blocking);
-        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_NAME, gpsHandle, remoteApi.simx_opmode_blocking);
+        // connect handle and update config
+        int result;
+        result = vRep.simxGetObjectHandle(clientID, VREP_ROBOT_LEFT_WHEEL_NAME, leftWheelHandle, remoteApi.simx_opmode_blocking);
+        runRightWheelEncoder = result == remoteApi.simx_return_ok;
+        runningStateRightWheelIsOK = runRightWheelEncoder;
+
+        result = vRep.simxGetObjectHandle(clientID, VREP_ROBOT_RIGHT_WHEEL_NAME, rightWheelHandle, remoteApi.simx_opmode_blocking);
+        runLeftWheelEncoder = result == remoteApi.simx_return_ok;
+        runningStateLeftWheelIsOK = runLeftWheelEncoder;
+
+        runWheelEncoder = runRightWheelEncoder && runLeftWheelEncoder;
+        runMotion = runWheelEncoder;
+
+        result = vRep.simxGetObjectHandle(clientID, VREP_ROBOT_VISION_SENSOR_NAME, cameraHandle, remoteApi.simx_opmode_blocking);
+        runCamera = result == remoteApi.simx_return_ok;
+        runningStateCameraIsOK = runCamera;
+
+        result = vRep.simxGetObjectHandle(clientID, VREP_ROBOT_NAME, gpsHandle, remoteApi.simx_opmode_blocking);
+        runGPS = result == remoteApi.simx_return_ok;
+        runningStateGPSIsOK = runGPS;
 
         for (int i = 0; i < SONARS_NUMBER; i++) {
-            vRep.simxGetObjectHandle(clientID, VREP_ROBOT_BASE_SONAR_NAME + i, sonarsHandles[i], remoteApi.simx_opmode_blocking);
-            runSonars |= sonarsHandles[i].getValue() != -1;
+            result = vRep.simxGetObjectHandle(clientID, VREP_ROBOT_BASE_SONAR_NAME + i, sonarsHandles[i], remoteApi.simx_opmode_blocking);
+            runningStateSonars[i] = result == remoteApi.simx_return_ok;
+            runAtLeastOneSonar |= runningStateSonars[i];
         }
-
-        // update config
-        runWheelEncoder = (leftWheelHandle.getValue() != -1) && (rightWheelHandle.getValue() != -1);
-        runMotion = runWheelEncoder;
-        runCamera = cameraHandle.getValue() != -1;
-        runGPS = gpsHandle.getValue() != -1;
     }
 
     private void firstReadAllSensors()
     {
+        int result;
         // right wheel
-        if (rightWheelHandle.getValue() != -1)
+        if (runRightWheelEncoder)
         {
-            vRep.simxGetJointPosition(clientID, rightWheelHandle.getValue(), robotRightJointPosition, remoteApi.simx_opmode_streaming);
+            result = vRep.simxGetJointPosition(clientID, rightWheelHandle.getValue(), robotRightJointPosition, remoteApi.simx_opmode_streaming);
+            runRightWheelEncoder = result != remoteApi.simx_return_remote_error_flag;
         }
         currentRightJointPosition = robotRightJointPosition.getValue();
         totalRightJointPosition = 0;
 
         // left wheel
-        if (leftWheelHandle.getValue() != -1)
+        if (runLeftWheelEncoder)
         {
-            vRep.simxGetJointPosition(clientID, leftWheelHandle.getValue(), robotLeftJointPosition, remoteApi.simx_opmode_streaming);
+            result = vRep.simxGetJointPosition(clientID, leftWheelHandle.getValue(), robotLeftJointPosition, remoteApi.simx_opmode_streaming);
+            runLeftWheelEncoder = result != remoteApi.simx_return_remote_error_flag;
         }
         currentLeftJointPosition = robotLeftJointPosition.getValue();
         totalLeftJointPosition = 0;
+        runWheelEncoder = runRightWheelEncoder && runLeftWheelEncoder;
+        runMotion = runWheelEncoder;
 
         // camera
         if (runCamera)
         {
-            vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_streaming);
+            result = vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_streaming);
+            runCamera = result != remoteApi.simx_return_remote_error_flag;
         }
 
         // gps
         if (runGPS)
         {
             FloatWA position = new FloatWA(3);
-            vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
+            result = vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
+            runGPS = result != remoteApi.simx_return_remote_error_flag;
         }
 
         // sonars
@@ -858,9 +1011,11 @@ public class Controller implements IController {
         IntW detectedObjectHandle = new IntW(1);
         FloatWA detectedSurfaceNormalVector = new FloatWA(1);
         for (int i = 0; i < SONARS_NUMBER; i++) {
-            if (sonarsHandles[i].getValue() != -1)
+            if (runningStateSonars[i])
             {
-                vRep.simxReadProximitySensor(clientID, sonarsHandles[i].getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_streaming);
+                result = vRep.simxReadProximitySensor(clientID, sonarsHandles[i].getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_streaming);
+                runningStateSonars[i] = result != remoteApi.simx_return_remote_error_flag;
+                runAtLeastOneSonar |= runningStateSonars[i];
             }
         }
     }
@@ -914,26 +1069,47 @@ public class Controller implements IController {
                             lblGpsY.setText("Y: " + gpsValues[1]);
                             lblGpsZ.setText("Z: " + gpsValues[2]);
                         }
-                        if (runSonars) {
-                            lblSensor0.setText(sonarValues[0] + "m");
-                            lblSensor1.setText(sonarValues[1] + "m");
-                            lblSensor2.setText(sonarValues[2] + "m");
-                            lblSensor3.setText(sonarValues[3] + "m");
-                            lblSensor4.setText(sonarValues[4] + "m");
-                            lblSensor5.setText(sonarValues[5] + "m");
-                            lblSensor5.setText(sonarValues[5] + "m");
+                        if (runAtLeastOneSonar) {
+                            lblSensor0.setText(" " + sonarValues[0] + "m");
+                            lblSensor1.setText(" " + sonarValues[1] + "m");
+                            lblSensor2.setText(" " + sonarValues[2] + "m");
+                            lblSensor3.setText(" " + sonarValues[3] + "m");
+                            lblSensor4.setText(" " + sonarValues[4] + "m");
+                            lblSensor5.setText(" " + sonarValues[5] + "m");
+                            lblSensor5.setText(" " + sonarValues[5] + "m");
                         }
                         if (runWheelEncoder) {
-                            lblRightWheel.setText("Right : " + encoderValues[0]);
-                            lblLeftWheel.setText("Left : " + encoderValues[1]);
+                            lblRightWheel.setText(" Right: " + encoderValues[0]);
+                            lblLeftWheel.setText(" Left: " + encoderValues[1]);
                         }
+                        updateLeds();
                         if (runCamera) {
-                            templateMatchingCV(getImage());
+                            if (bufferedImageRGB != null)
+                            {
+                                isComputingTheImage = true;
+
+                                IplImage rgbSrc = bufferedImageToIplImage(bufferedImageRGB);
+                                IplImage graySrc = bufferedImageToIplImage(bufferedImageToGray(bufferedImageRGB));
+
+                                if (rgbSrc != null && graySrc != null)
+                                {
+                                    CvPoint matchLocation = findMarker(graySrc);
+                                    if (matchLocation != null) {
+                                        drawRectangle(rgbSrc, matchLocation);
+                                        displayBufferedImage(iplImageToBufferedImage(rgbSrc));
+                                    }
+                                    else
+                                    {
+                                        displayBufferedImage(bufferedImageRGB);
+                                    }
+                                }
+                                isComputingTheImage = false;
+                            }
                         }
                     }
                 }
             });
-            Delay.ms(20);
+            Delay.ms(33);
         }
         System.out.println("stop update UI");
     }
@@ -941,7 +1117,6 @@ public class Controller implements IController {
     private void updateSensorThreadRunnable()
     {
         System.out.println("start update sensors");
-
         setBatteryTime(20); // set battery for 20 minutes
         while (running)
         {
@@ -950,7 +1125,7 @@ public class Controller implements IController {
             }
 
             if (!running) break;
-            if (runSonars) {
+            if (runAtLeastOneSonar) {
                 sonarValues = readSonars();
             }
 
@@ -958,11 +1133,15 @@ public class Controller implements IController {
             if (runWheelEncoder) {
                 encoderValues[0] = readLeftWheelEnc();
                 encoderValues[1] = readRightWheelEnc();
+
+                if (!runMotion) {
+                    move(0);
+                }
             }
 
             if (!running) break;
             if (runCamera) {
-                imageCamera = readCamera();
+                readCamera();
             }
 
             if (!running) break;
