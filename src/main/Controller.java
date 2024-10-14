@@ -84,28 +84,33 @@ public class Controller implements IController {
     //endregion
 
     //region Sensors variables declaration
+    private final int SONARS_NUMBER = 6;
+    private final int WHEEL_NUMBER = 2; // LEFT-RIGHT
+    private final int GPS_NUMBER = 3; // XYZ
     private Color[][] imageCamera;
-    private double[] gpsValues = new double[3];
-    private double[] sonarValues = new double[6];
-    private final double[] encoderValues = new double[2];
+    private double[] gpsValues = new double[GPS_NUMBER];
+    private double[] sonarValues = new double[SONARS_NUMBER];
+    private final double[] encoderValues = new double[WHEEL_NUMBER];
 
-    private boolean runGPS = true;
-    private boolean runCamera = true;
-    private boolean runMotion = true;
-    private boolean runSensors = true;
-    private boolean runWheelEncoder = true;
+    private boolean runWheelEncoder = false;
+    private boolean runMotion = false;
+    private boolean runCamera = false;
+    private boolean runGPS = false;
+    private boolean runSonars = false;
+
+    private final IntW cameraHandle = new IntW(-1);
+    private final IntW gpsHandle = new IntW(-1);
+    private final IntW leftWheelHandle = new IntW(-1);
+    private final IntW rightWheelHandle = new IntW(-1);
+    private final IntW[] sonarsHandles = new IntW[SONARS_NUMBER];
     //endregion
 
     //region Robot variables declaration
-    private final IntW cameraHandle = new IntW(1);
-    private final IntW leftWheelHandle = new IntW(1);
-    private final IntW rightWheelHandle = new IntW(1);
-
     private volatile boolean running = false;
-    private boolean firstCameraRead = true;
-    private final boolean[] firstSensorRead = new boolean[] { true, true, true, true, true, true };
-    private boolean firstLeftWheelCall = true;
-    private boolean firstRightWheelCall = true;
+//    private boolean firstCameraRead = true;
+//    private final boolean[] firstSensorRead = new boolean[] { true, true, true, true, true, true };
+//    private boolean firstLeftWheelCall = true;
+//    private boolean firstRightWheelCall = true;
 
     private MotionDirections dir = MotionDirections.None; // Direction.
     private final int vel = 5;    // Velocity.
@@ -160,6 +165,7 @@ public class Controller implements IController {
     private final String VREP_ROBOT_LEFT_WHEEL_NAME = "JointLeftWheel";
     private final String VREP_ROBOT_RIGHT_WHEEL_NAME = "JointRightWheel";
     private final String VREP_ROBOT_VISION_SENSOR_NAME = "Vision_sensor";
+    private final String VREP_ROBOT_BASE_SONAR_NAME = "Proximity_sensor";
     private final String CAMERA_WND_NAME = "Camera";
     //endregion
 
@@ -187,24 +193,6 @@ public class Controller implements IController {
     //endregion
 
     //region Methods
-    //region Stage & close events method
-    @Override
-    public void setStage(Stage stage) {
-        if (primaryStage != null)
-        {
-            primaryStage.removeEventHandler(WindowEvent.WINDOW_CLOSE_REQUEST, (WindowEvent event) -> handleCloseEvent());
-        }
-        primaryStage = stage;
-        if (primaryStage != null)
-        {
-            primaryStage.setOnCloseRequest((WindowEvent event) -> handleCloseEvent());
-        }
-    }
-
-    private void handleCloseEvent() {
-        kill();
-    }
-    //endregion
 
     //region Battery methods
     private int getBatteryTime() {
@@ -242,35 +230,22 @@ public class Controller implements IController {
 
     //region Wheel methods
     private double readRightWheelEnc() {
-        if (firstRightWheelCall) {
-            vRep.simxGetJointPosition(clientID, rightWheelHandle.getValue(), robotRightJointPosition, remoteApi.simx_opmode_streaming);
-            currentRightJointPosition = robotRightJointPosition.getValue();
-            firstRightWheelCall = false;
-            totalRightJointPosition = 0;
-        } else {
-            vRep.simxGetJointPosition(clientID, rightWheelHandle.getValue(), robotRightJointPosition, remoteApi.simx_opmode_buffer);
-            currentRightJointPosition = robotRightJointPosition.getValue();
-            dxRight = getAngleMinusAlpha(currentRightJointPosition, previousRightJointPosition);
-            totalRightJointPosition += dxRight;
-        }
+        vRep.simxGetJointPosition(clientID, rightWheelHandle.getValue(), robotRightJointPosition, remoteApi.simx_opmode_buffer);
+        currentRightJointPosition = robotRightJointPosition.getValue();
+        dxRight = getAngleMinusAlpha(currentRightJointPosition, previousRightJointPosition);
+        totalRightJointPosition += dxRight;
+
         previousRightJointPosition = currentRightJointPosition;
         return (Math.round((totalRightJointPosition / (2 * Math.PI)) * 100d) / 100d);
     }
 
     private double readLeftWheelEnc() {
-        if (firstLeftWheelCall) {
-            vRep.simxGetJointPosition(clientID, leftWheelHandle.getValue(), robotLeftJointPosition, remoteApi.simx_opmode_streaming);
-            currentLeftJointPosition = robotLeftJointPosition.getValue();
-            firstLeftWheelCall = false;
-            totalLeftJointPosition = 0;
-        } else {
-            vRep.simxGetJointPosition(clientID, leftWheelHandle.getValue(), robotLeftJointPosition, remoteApi.simx_opmode_buffer);
-            currentLeftJointPosition = robotLeftJointPosition.getValue();
-            dxLeft = getAngleMinusAlpha(currentLeftJointPosition, previousLeftJointPosition);
-            totalLeftJointPosition += dxLeft;
-        }
-        previousLeftJointPosition = currentLeftJointPosition;
+        vRep.simxGetJointPosition(clientID, leftWheelHandle.getValue(), robotLeftJointPosition, remoteApi.simx_opmode_buffer);
+        currentLeftJointPosition = robotLeftJointPosition.getValue();
+        dxLeft = getAngleMinusAlpha(currentLeftJointPosition, previousLeftJointPosition);
+        totalLeftJointPosition += dxLeft;
 
+        previousLeftJointPosition = currentLeftJointPosition;
         return (Math.round((totalLeftJointPosition / (2 * Math.PI)) * 100d) / 100d);
     }
 
@@ -293,16 +268,14 @@ public class Controller implements IController {
     }
 
     private int getEncoderNo() {
-        return (2);
+        return WHEEL_NUMBER;
     }
     //endregion
 
     //region GPS methods
     private double[] readGPS() {
-        IntW baseHandle = new IntW(1);
         FloatWA position = new FloatWA(3);
-        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_NAME, baseHandle, remoteApi.simx_opmode_streaming);
-        vRep.simxGetObjectPosition(clientID, baseHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
+        vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
         double[] positions = new double[position.getArray().length];
 
         positions[0] = Math.round((VREP_SENS_AXIS_X * (double) position.getArray()[0] + VREP_START_POS_X) * 100.0) / 100.0;
@@ -324,7 +297,7 @@ public class Controller implements IController {
     }
 
     private int getGPSNo() {
-        return (3);
+        return GPS_NUMBER;
     }
     //endregion
 
@@ -335,17 +308,7 @@ public class Controller implements IController {
         IntW detectedObjectHandle = new IntW(1);
         FloatWA detectedSurfaceNormalVector = new FloatWA(1);
 
-        IntW sensorHandle = new IntW(1);
-        String objectName = "Proximity_sensor" + sensor;
-        vRep.simxGetObjectHandle(clientID, objectName, sensorHandle, remoteApi.simx_opmode_blocking);
-        if (firstSensorRead[sensor])
-        {
-            vRep.simxReadProximitySensor(clientID, sensorHandle.getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_streaming);
-            firstSensorRead[sensor] = false;
-        }
-        else {
-            vRep.simxReadProximitySensor(clientID, sensorHandle.getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_buffer);
-        }
+        vRep.simxReadProximitySensor(clientID, sonarsHandles[sensor].getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_buffer);
 
         float[] detectedPointXYZ = detectedPoint.getArray();
         double distance = Math.sqrt(Math.pow(detectedPointXYZ[0], 2) + Math.pow(detectedPointXYZ[1], 2) + Math.pow(detectedPointXYZ[2], 2));
@@ -361,8 +324,13 @@ public class Controller implements IController {
 
     private double[] readSonars() {
         for (int i = 0; i < getSonarNo(); i++)
-            sonarValues[i] = readSonarRange(i);
-        return (sonarValues);
+        {
+            if (sonarsHandles[i].getValue() != -1)
+            {
+                sonarValues[i] = readSonarRange(i);
+            }
+        }
+        return sonarValues;
     }
 
     private double[] getSonarRanges() {
@@ -374,19 +342,13 @@ public class Controller implements IController {
     }
 
     private int getSonarNo() {
-        return (sonarValues.length);
+        return SONARS_NUMBER;
     }
     //endregion
 
     //region Camera methods
     private Color[][] readCamera() {
-        if (firstCameraRead) {
-            vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_streaming);
-            firstCameraRead = false;
-        }
-        else {
-            vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_buffer);
-        }
+        vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_buffer);
         return (imageToColor(image));
     }
 
@@ -519,36 +481,6 @@ public class Controller implements IController {
     //endregion
 
     //region Motion Methods
-    public void btnForwardPressed() {
-        resetButtonsStyle();
-        btnForward.setStyle("-fx-background-color: #7FFF00; ");
-        dir = MotionDirections.Forward;
-    }
-
-    public void btnBackwardPressed() {
-        resetButtonsStyle();
-        btnBack.setStyle("-fx-background-color: #7FFF00; ");
-        dir = MotionDirections.Backward;
-    }
-
-    public void btnLeftPressed() {
-        resetButtonsStyle();
-        btnLeft.setStyle("-fx-background-color: #7FFF00; ");
-        dir = MotionDirections.Left;
-    }
-
-    public void btnRightPressed() {
-        resetButtonsStyle();
-        btnRight.setStyle("-fx-background-color: #7FFF00; ");
-        dir = MotionDirections.Right;
-    }
-
-    public void btnStopPressed() {
-        resetButtonsStyle();
-        btnStop.setStyle("-fx-background-color: #7FFF00; ");
-        dir = MotionDirections.Stop;
-    }
-
     private void resetButtonsStyle() {
         btnRight.setStyle(defaultButtonStyle);
         btnStop.setStyle(defaultButtonStyle);
@@ -638,17 +570,17 @@ public class Controller implements IController {
     }
     //endregion
 
-    //region Generic Methods
-    @Override
-    public void init() {
-        defaultButtonStyle = btnForward.getStyle();
-        markerImage = cvLoadImage("data/images/marker.jpg", 0);
-        vRep = new remoteApi();
-        vRep.simxFinish(-1); // close all simulations... to be sure
+    //region UI methods
+    private void handleCloseEvent()
+    {
+        btnDisconnectPressed();
     }
 
-    public void btnConnectPressed() {
-        if (clientID == -1) {
+    public void btnConnectPressed()
+    {
+        if (clientID == -1)
+        {
+            btnConnect.setStyle(defaultButtonStyle);
             btnConnect.setDisable(true);
             btnConnect.setText("Connecting...");
 
@@ -686,37 +618,96 @@ public class Controller implements IController {
 
             new Thread(task).start(); // run the task asynchronously
         }
-        else {
-            btnConnect.setText("Disconnecting...");
-            btnConnect.setStyle(defaultButtonStyle);
-            btnConnect.setDisable(true);
-
-            // creation of a task to disconnect properly and not block the UI
-            Task<Void> task = new Task<Void>() {
-                @Override
-                protected Void call() throws Exception {
-                    kill();
-                    return null;
-                }
-
-                @Override
-                protected void succeeded() {
-                    btnConnect.setDisable(false);
-                    btnConnect.setText("Connect");
-                }
-
-                @Override
-                protected void failed() {
-                    btnConnect.setDisable(false);
-                    btnConnect.setText("Connect");
-                }
-            };
-
-            // run the task asynchronously to not block the UI
-            new Thread(task).start();
+        else
+        {
+            btnDisconnectPressed();
         }
     }
 
+    private void btnDisconnectPressed()
+    {
+        btnConnect.setText("Disconnecting...");
+        btnConnect.setStyle(defaultButtonStyle);
+        btnConnect.setDisable(true);
+
+        // creation of a task to disconnect properly and not block the UI
+        Task<Void> task = new Task<Void>() {
+            @Override
+            protected Void call() throws Exception {
+                kill();
+                return null;
+            }
+
+            @Override
+            protected void succeeded() {
+                btnConnect.setDisable(false);
+                btnConnect.setText("Connect");
+            }
+
+            @Override
+            protected void failed() {
+                btnConnect.setDisable(false);
+                btnConnect.setText("Connect");
+            }
+        };
+
+        // run the task asynchronously to not block the UI
+        new Thread(task).start();
+    }
+
+    public void btnForwardPressed() {
+        resetButtonsStyle();
+        btnForward.setStyle("-fx-background-color: #7FFF00; ");
+        dir = MotionDirections.Forward;
+    }
+
+    public void btnBackwardPressed() {
+        resetButtonsStyle();
+        btnBack.setStyle("-fx-background-color: #7FFF00; ");
+        dir = MotionDirections.Backward;
+    }
+
+    public void btnLeftPressed() {
+        resetButtonsStyle();
+        btnLeft.setStyle("-fx-background-color: #7FFF00; ");
+        dir = MotionDirections.Left;
+    }
+
+    public void btnRightPressed() {
+        resetButtonsStyle();
+        btnRight.setStyle("-fx-background-color: #7FFF00; ");
+        dir = MotionDirections.Right;
+    }
+
+    public void btnStopPressed() {
+        resetButtonsStyle();
+        btnStop.setStyle("-fx-background-color: #7FFF00; ");
+        dir = MotionDirections.Stop;
+    }
+    //endregion
+
+    //region Generic Methods
+    @Override
+    public void setStage(Stage stage)
+    {
+        if (primaryStage != null)
+        {
+            primaryStage.removeEventHandler(WindowEvent.WINDOW_CLOSE_REQUEST, (WindowEvent event) -> handleCloseEvent());
+        }
+        primaryStage = stage;
+        if (primaryStage != null)
+        {
+            primaryStage.setOnCloseRequest((WindowEvent event) -> handleCloseEvent());
+        }
+    }
+
+    @Override
+    public void init() {
+        defaultButtonStyle = btnForward.getStyle();
+        markerImage = cvLoadImage("data/images/marker.jpg", 0);
+        vRep = new remoteApi();
+        vRep.simxFinish(-1); // close all simulations... to be sure
+    }
 
     private boolean connectToVrep()
     {
@@ -726,12 +717,12 @@ public class Controller implements IController {
 
     private void kill()
     {
-        killTimers();
-        killThreads();
-        disconnectToVrep();
         cvDestroyWindow(CAMERA_WND_NAME);
         cvDestroyAllWindows();
         ImageViewer.dispose();
+        killTimers();
+        killThreads();
+        disconnectToVrep();
     }
 
     private void killTimers()
@@ -763,23 +754,19 @@ public class Controller implements IController {
 
     private void disconnectToVrep()
     {
-        //vRep.simxStopSimulation(clientID, remoteApi.simx_opmode_blocking);
-        vRep.simxFinish(clientID);
-        clientID = -1;
+        if (clientID != -1)
+        {
+            //vRep.simxStopSimulation(clientID, remoteApi.simx_opmode_blocking);
+            vRep.simxFinish(clientID);
+            clientID = -1;
+        }
     }
 
-    private boolean setup() {
-        boolean result = true;
-        if (running)
+    private void setup() {
+        if (!running)
         {
-            result = false;
-        }
-        else
-        {
-
-            vRep.simxGetObjectHandle(clientID, VREP_ROBOT_LEFT_WHEEL_NAME, leftWheelHandle, remoteApi.simx_opmode_blocking);
-            vRep.simxGetObjectHandle(clientID, VREP_ROBOT_RIGHT_WHEEL_NAME, rightWheelHandle, remoteApi.simx_opmode_blocking);
-            vRep.simxGetObjectHandle(clientID, VREP_ROBOT_VISION_SENSOR_NAME, cameraHandle, remoteApi.simx_opmode_blocking);
+            setupSensors();
+            firstReadAllSensors();
 
             pw = canvasCamera.getGraphicsContext2D().getPixelWriter();
             ImageViewer.open(resolutionCamera, resolutionCamera, CAMERA_WND_NAME);
@@ -790,7 +777,92 @@ public class Controller implements IController {
             initTimers(true);
             initThreads(true);
         }
-        return result;
+    }
+
+    private void setupSensors()
+    {
+        // reset handles and config
+        gpsHandle.setValue(-1);
+        cameraHandle.setValue(-1);
+        leftWheelHandle.setValue(-1);
+        rightWheelHandle.setValue(-1);
+        for (int i = 0; i < SONARS_NUMBER; i++)
+        {
+            if (sonarsHandles[i] == null)
+            {
+                sonarsHandles[i] = new IntW(-1);
+            }
+            else
+            {
+                sonarsHandles[i].setValue(-1);
+            }
+        }
+        runWheelEncoder = false;
+        runMotion = false;
+        runCamera = false;
+        runGPS = false;
+        runSonars = false;
+
+        // connect handle
+        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_LEFT_WHEEL_NAME, leftWheelHandle, remoteApi.simx_opmode_blocking);
+        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_RIGHT_WHEEL_NAME, rightWheelHandle, remoteApi.simx_opmode_blocking);
+        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_VISION_SENSOR_NAME, cameraHandle, remoteApi.simx_opmode_blocking);
+        vRep.simxGetObjectHandle(clientID, VREP_ROBOT_NAME, gpsHandle, remoteApi.simx_opmode_blocking);
+
+        for (int i = 0; i < SONARS_NUMBER; i++) {
+            vRep.simxGetObjectHandle(clientID, VREP_ROBOT_BASE_SONAR_NAME + i, sonarsHandles[i], remoteApi.simx_opmode_blocking);
+            runSonars |= sonarsHandles[i].getValue() != -1;
+        }
+
+        // update config
+        runWheelEncoder = (leftWheelHandle.getValue() != -1) && (rightWheelHandle.getValue() != -1);
+        runMotion = runWheelEncoder;
+        runCamera = cameraHandle.getValue() != -1;
+        runGPS = gpsHandle.getValue() != -1;
+    }
+
+    private void firstReadAllSensors()
+    {
+        // right wheel
+        if (rightWheelHandle.getValue() != -1)
+        {
+            vRep.simxGetJointPosition(clientID, rightWheelHandle.getValue(), robotRightJointPosition, remoteApi.simx_opmode_streaming);
+        }
+        currentRightJointPosition = robotRightJointPosition.getValue();
+        totalRightJointPosition = 0;
+
+        // left wheel
+        if (leftWheelHandle.getValue() != -1)
+        {
+            vRep.simxGetJointPosition(clientID, leftWheelHandle.getValue(), robotLeftJointPosition, remoteApi.simx_opmode_streaming);
+        }
+        currentLeftJointPosition = robotLeftJointPosition.getValue();
+        totalLeftJointPosition = 0;
+
+        // camera
+        if (runCamera)
+        {
+            vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_streaming);
+        }
+
+        // gps
+        if (runGPS)
+        {
+            FloatWA position = new FloatWA(3);
+            vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
+        }
+
+        // sonars
+        BoolW detectionState = new BoolW(false);
+        FloatWA detectedPoint = new FloatWA(1); //Coordinates relatives to the sensor's frame
+        IntW detectedObjectHandle = new IntW(1);
+        FloatWA detectedSurfaceNormalVector = new FloatWA(1);
+        for (int i = 0; i < SONARS_NUMBER; i++) {
+            if (sonarsHandles[i].getValue() != -1)
+            {
+                vRep.simxReadProximitySensor(clientID, sonarsHandles[i].getValue(), detectionState, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector, remoteApi.simx_opmode_streaming);
+            }
+        }
     }
 
     private void initTimers(boolean start)
@@ -842,7 +914,7 @@ public class Controller implements IController {
                             lblGpsY.setText("Y: " + gpsValues[1]);
                             lblGpsZ.setText("Z: " + gpsValues[2]);
                         }
-                        if (runSensors) {
+                        if (runSonars) {
                             lblSensor0.setText(sonarValues[0] + "m");
                             lblSensor1.setText(sonarValues[1] + "m");
                             lblSensor2.setText(sonarValues[2] + "m");
@@ -878,7 +950,7 @@ public class Controller implements IController {
             }
 
             if (!running) break;
-            if (runSensors) {
+            if (runSonars) {
                 sonarValues = readSonars();
             }
 
@@ -920,7 +992,6 @@ public class Controller implements IController {
         }
         System.out.println("stop main");
     }
-
     //endregion
 
     //region Automate Methods
@@ -966,7 +1037,6 @@ public class Controller implements IController {
                 break;
         }
     }
-
     //endregion
 
     //endregion
