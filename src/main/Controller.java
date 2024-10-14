@@ -854,9 +854,17 @@ public class Controller implements IController {
 
     private void kill()
     {
+        forceStop();
         killTimers();
         killThreads();
         disconnectToVrep();
+    }
+
+    private void forceStop()
+    {
+        btnStopPressed();
+        teleoperate(MotionDirections.Stop, 0);
+        Delay.ms(10);
     }
 
     private void killTimers()
@@ -904,7 +912,7 @@ public class Controller implements IController {
             firstReadAllSensors();
             setDisableAllMotionButtons(!runMotion);
 
-            dir = MotionDirections.None;
+            forceStop();
             running = true;
 
             initTimers(true);
