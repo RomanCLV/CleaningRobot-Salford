@@ -28,6 +28,15 @@
                 prefWidth="124.0" text="Connect" GridPane.halignment="CENTER" GridPane.valignment="CENTER"/>
 
         <HBox alignment="CENTER" GridPane.rowIndex="2">
+            <Button fx:id="btnPositionChart" translateX="-20.0" maxHeight="35.0" maxWidth="35.0" minHeight="35.0" minWidth="35.0"
+                    mnemonicParsing="false" onAction="#btnPositionChartPressed" prefHeight="35.0" prefWidth="35.0"
+                    text="Button">
+                <graphic>
+                    <ImageView fitHeight="20.0" fitWidth="20.0" pickOnBounds="true" preserveRatio="true">
+                        <Image url="@../img/chart.png"/>
+                    </ImageView>
+                </graphic>
+            </Button>
             <Circle fx:id="gpsLed" radius="7.0" fill="darkgray"/>
             <Label text="  GPS">
                 <font>

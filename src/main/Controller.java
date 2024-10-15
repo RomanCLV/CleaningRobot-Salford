@@ -1,17 +1,22 @@
 package main;
 
 import coppelia.*;
-import com.googlecode.javacv.cpp.opencv_core;
 
 import javafx.fxml.FXML;
 import javafx.application.Platform;
-import javafx.scene.shape.Circle;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.stage.Stage;
+import javafx.scene.shape.Circle;
 import javafx.stage.WindowEvent;
+
 import javafx.scene.control.Label;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
 import javafx.scene.image.PixelWriter;
+import javafx.scene.control.Dialog;
+
 import javafx.concurrent.Task;
 
 import utils.*;
@@ -24,8 +29,6 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import static com.googlecode.javacv.cpp.opencv_core.*;
-import static com.googlecode.javacv.cpp.opencv_highgui.cvDestroyAllWindows;
-import static com.googlecode.javacv.cpp.opencv_highgui.cvDestroyWindow;
 import static com.googlecode.javacv.cpp.opencv_highgui.cvLoadImage;
 import static com.googlecode.javacv.cpp.opencv_imgproc.*;
 
@@ -100,15 +103,19 @@ public class Controller implements IController {
     private Label lblRightWheel;
     @FXML
     private Label lblLeftWheel;
+    @FXML
+    private Button btnPositionChart;
 
     private String defaultButtonStyle;
-    private Circle[] sonarLeds = new Circle[6];
+    private final Circle[] sonarLeds = new Circle[6];
     private PixelWriter pw;
 
     private final static javafx.scene.paint.Color GREEN_LED = javafx.scene.paint.Color.CHARTREUSE;
     private final static javafx.scene.paint.Color RED_LED = javafx.scene.paint.Color.RED;
     private final static javafx.scene.paint.Color ORANGE_LED = javafx.scene.paint.Color.ORANGE;
     private final static javafx.scene.paint.Color GRAY_LED = javafx.scene.paint.Color.DARKGRAY;
+
+    private Stage positionChartsStage;
     //endregion
 
     //region Sensors variables declaration
@@ -646,6 +653,12 @@ public class Controller implements IController {
         btnDisconnectPressed();
     }
 
+    private void handlePositionChartsCloseEvent()
+    {
+        positionChartsStage.setOnCloseRequest((WindowEvent event) -> handlePositionChartsCloseEvent());
+        positionChartsStage = null;
+    }
+
     public void btnConnectPressed()
     {
         if (clientID == -1)
@@ -700,6 +713,11 @@ public class Controller implements IController {
         btnConnect.setStyle(defaultButtonStyle);
         btnConnect.setDisable(true);
         setDisableAllMotionButtons(true);
+        if (positionChartsStage != null)
+        {
+            positionChartsStage.close();
+            handlePositionChartsCloseEvent();
+        }
 
         // creation of a task to disconnect properly and not block the UI
         Task<Void> task = new Task<Void>() {
@@ -798,6 +816,8 @@ public class Controller implements IController {
         btnRight.setDisable(setDisable);
         btnLeft.setDisable(setDisable);
         btnStop.setDisable(setDisable);
+
+        btnPositionChart.setDisable(setDisable);
     }
 
     private void updateLeds()
@@ -810,6 +830,39 @@ public class Controller implements IController {
         wheelsLed.setFill((runningStateRightWheelIsOK && runningStateLeftWheelIsOK) ? GREEN_LED : ((runningStateRightWheelIsOK || runningStateLeftWheelIsOK) ? ORANGE_LED : RED_LED));
         cameraLed.setFill(runningStateCameraIsOK ? GREEN_LED :  RED_LED);
         gpsLed.setFill(runningStateGPSIsOK ? GREEN_LED :  RED_LED);
+    }
+
+    public void btnPositionChartPressed()
+    {
+        if (positionChartsStage == null)
+        {
+            Parent root = null;
+            try
+            {
+                FXMLLoader fxmlLoader = new FXMLLoader(getClass().getResource("PositionChartsGUI.fxml"));
+                root = fxmlLoader.load();
+            }
+            catch (Exception e)
+            {
+                Dialog<Void> d = new Dialog<>();
+                d.setTitle("Error");
+                d.setContentText("Unable to open the Position Charts GUI.");
+                d.showAndWait();
+            }
+            if (root != null)
+            {
+                positionChartsStage = new Stage();
+                positionChartsStage.setTitle("Position Charts");
+                positionChartsStage.setScene(new Scene(root));
+
+                positionChartsStage.setOnCloseRequest((WindowEvent event) -> handlePositionChartsCloseEvent());
+                positionChartsStage.show();
+            }
+        }
+        else
+        {
+            positionChartsStage.requestFocus();
+        }
     }
     //endregion
 
