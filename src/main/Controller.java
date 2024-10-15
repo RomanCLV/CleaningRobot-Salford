@@ -950,6 +950,7 @@ public class Controller implements IController {
         forceStop();
         killThreads();
         killTimers();
+        forceStop();
         disconnectToVrep();
     }
 
@@ -957,8 +958,8 @@ public class Controller implements IController {
     {
         requestState = States.None;
         dir = MotionDirections.Stop;
-        teleoperate();
-        Delay.ms(10);
+        vRep.simxSetJointTargetVelocity(clientID, leftWheelHandle.getValue(), 0, remoteApi.simx_opmode_blocking);
+        vRep.simxSetJointTargetVelocity(clientID, rightWheelHandle.getValue(), 0, remoteApi.simx_opmode_blocking);
     }
 
     private void killTimers()
