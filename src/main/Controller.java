@@ -121,7 +121,7 @@ public class Controller implements IController {
     //region Sensors variables declaration
     private final int SONARS_NUMBER = 6;
     private final int WHEEL_NUMBER = 2; // LEFT-RIGHT
-    private final int GPS_NUMBER = 3; // XYZ
+    private final int GPS_NUMBER = 6; // X, Y, Z, Rx, Ry et Rz
     private double[] gpsValues = new double[GPS_NUMBER];
     private double[] sonarValues = new double[SONARS_NUMBER];
     private final double[] encoderValues = new double[WHEEL_NUMBER];
@@ -145,17 +145,18 @@ public class Controller implements IController {
     private final IntW leftWheelHandle = new IntW(-1);
     private final IntW rightWheelHandle = new IntW(-1);
     private final IntW[] sonarsHandles = new IntW[SONARS_NUMBER];
+
+    private boolean isPowerEmpty;
     //endregion
 
     //region Robot variables declaration
     private volatile boolean running = false;
-//    private boolean firstCameraRead = true;
-//    private final boolean[] firstSensorRead = new boolean[] { true, true, true, true, true, true };
-//    private boolean firstLeftWheelCall = true;
-//    private boolean firstRightWheelCall = true;
 
-    private MotionDirections dir = MotionDirections.None; // Direction.
+    private MotionDirections dir = MotionDirections.Stop; // Direction.
     private final int vel = 5;    // Velocity.
+
+    private boolean hasOrientationAim = false;
+    private double orientationAim = 0.;
     //endregion
 
     //region Camera variables declaration
@@ -167,6 +168,8 @@ public class Controller implements IController {
     private final IntWA resolution = new IntWA(1);
     private final CharWA image = new CharWA(resolutionCamera * resolutionCamera * 3);
     private BufferedImage bufferedImageRGB;
+    private volatile boolean isComputingTheImage = false;
+    private volatile boolean isWrittingTheImage = false;
 
     private IplImage markerImage;
     //endregion
@@ -207,7 +210,7 @@ public class Controller implements IController {
     private final String VREP_ROBOT_VISION_SENSOR_NAME = "Vision_sensor";
     private final String VREP_ROBOT_BASE_SONAR_NAME = "Proximity_sensor";
 
-    private final float MARKER_THRESHOLD = 0.4f;
+    private final float MARKER_THRESHOLD = 0.6f;
     //endregion
 
     //region Timers variables declaration
@@ -225,8 +228,8 @@ public class Controller implements IController {
     //endregion
 
     //region States variables declaration
-    States currentState = States.None;
-    States requestState = States.Initialize;
+    private States currentState = States.None;
+    private States requestState = States.Initialize;
     //endregion
 
     private Stage primaryStage = null;
@@ -267,6 +270,11 @@ public class Controller implements IController {
         double v = getBatteryCapacity();
         return (v > 0.0);
     }
+
+    private boolean isBatteryLow(){
+        return getBatteryPercentage() <= 20.0;
+    }
+
     //endregion
 
     //region Wheel methods
@@ -318,14 +326,19 @@ public class Controller implements IController {
     //region GPS methods
     private double[] readGPS() {
         FloatWA position = new FloatWA(3);
-        int result = vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_blocking); //remoteApi.simx_opmode_streaming
+        FloatWA orientation = new FloatWA(3);
+        int result = vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
+        vRep.simxGetObjectOrientation(clientID, gpsHandle.getValue(), -1, orientation, remoteApi.simx_opmode_streaming);
         runningStateGPSIsOK = result != remoteApi.simx_return_remote_error_flag;
 
-        double[] positions = new double[position.getArray().length];
+        double[] positions = new double[GPS_NUMBER];
+        positions[0] = (VREP_SENS_AXIS_X * (double) position.getArray()[0] + VREP_START_POS_X);
+        positions[1] = (VREP_SENS_AXIS_Y * (double) position.getArray()[1] + VREP_START_POS_Y);
+        positions[2] = position.getArray()[2];
+        positions[3] = (orientation.getArray()[0]*180.)/Math.PI;
+        positions[4] = (orientation.getArray()[1]*180.)/Math.PI;
+        positions[5] = (orientation.getArray()[2]*180.)/Math.PI;
 
-        positions[0] = Math.round((VREP_SENS_AXIS_X * (double) position.getArray()[0] + VREP_START_POS_X) * 100.0) / 100.0;
-        positions[1] = Math.round((VREP_SENS_AXIS_Y * (double) position.getArray()[1] + VREP_START_POS_Y) * 100.0) / 100.0;
-        positions[2] = Math.round((double) position.getArray()[2] * 100.0) / 100.0;
         return (positions);
     }
 
@@ -340,6 +353,19 @@ public class Controller implements IController {
     private double getGPSZ() {
         return (gpsValues[2]);
     }
+
+    private double getGPSRx() {
+        return (gpsValues[3]);
+    }
+
+    private double getGPSRy() {
+        return (gpsValues[4]);
+    }
+
+    private double getGPSRz() {
+        return (gpsValues[5]);
+    }
+
 
     private int getGPSNo() {
         return GPS_NUMBER;
@@ -390,16 +416,21 @@ public class Controller implements IController {
     private int getSonarNo() {
         return SONARS_NUMBER;
     }
-    //endregion
 
-    private volatile boolean isComputingTheImage = false;
+    private boolean isObstacleDetected(){
+        return sonarValues[2] <= 0.1 || sonarValues[3] <= 0.1;
+    }
+    //endregion
 
     //region Camera methods
     private void readCamera() {
         int result = vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_buffer);
         runningStateCameraIsOK = result != remoteApi.simx_return_remote_error_flag;
-        if (!isComputingTheImage)
-            bufferedImageRGB = charWAtoBufferedImage(image);
+        if (!isComputingTheImage) {
+            isWrittingTheImage = true;
+                    bufferedImageRGB = charWAtoBufferedImage(image);
+            isWrittingTheImage = false;
+        }
     }
 
     private BufferedImage charWAtoBufferedImage(CharWA image) {
@@ -625,11 +656,20 @@ public class Controller implements IController {
         btnStopPressed();
     }
 
-    private void teleoperate(MotionDirections dir, int vel) {
+    private double generateRotationAim() {
+        double result = getGPSRz() + -180 + (360 * Rand.getDouble());
+        if (result > 180){
+            result = result - 360;
+        } else if (result < -180){
+            result = result + 360;
+        }
+        return result;
+    }
+
+    private void teleoperate() {
         switch (dir) {
             case Stop:
                 move(0);
-                this.dir = MotionDirections.None;
                 break;
             case Forward:
                 move(+vel);
@@ -908,15 +948,16 @@ public class Controller implements IController {
     private void kill()
     {
         forceStop();
-        killTimers();
         killThreads();
+        killTimers();
         disconnectToVrep();
     }
 
     private void forceStop()
     {
-        btnStopPressed();
-        teleoperate(MotionDirections.Stop, 0);
+        requestState = States.None;
+        dir = MotionDirections.Stop;
+        teleoperate();
         Delay.ms(10);
     }
 
@@ -939,7 +980,7 @@ public class Controller implements IController {
         running = false;
         while ((updateSensorThread != null && updateSensorThread.isAlive()) ||
                 (updateUIThread != null && updateUIThread.isAlive()) ||
-                (mainThread != null && mainThread.isAlive()));
+                (mainThread != null && (mainThread.isAlive() && !isPowerEmpty)));
 
         System.out.println("All threads stopped");
         updateUIThread = null;
@@ -966,9 +1007,13 @@ public class Controller implements IController {
             setDisableAllMotionButtons(!runMotion);
 
             forceStop();
+            requestState = States.Initialize;
             running = true;
 
             initTimers(true);
+
+            isPowerEmpty = false;
+            setBatteryTime(10); // set battery for 20 minutes
             initThreads(true);
         }
     }
@@ -1126,9 +1171,9 @@ public class Controller implements IController {
                     if (running)
                     {
                         if (runGPS) {
-                            lblGpsX.setText("X: " + gpsValues[0]);
-                            lblGpsY.setText("Y: " + gpsValues[1]);
-                            lblGpsZ.setText("Z: " + gpsValues[2]);
+                            lblGpsX.setText("X: " + Math.round(gpsValues[0]*100.)/100.);
+                            lblGpsY.setText("Y: " + Math.round(gpsValues[1]*100.)/100.);
+                            lblGpsZ.setText("Z: " + Math.round(gpsValues[2]*100.)/100.);
                         }
                         if (runAtLeastOneSonar) {
                             lblSensor0.setText(" " + sonarValues[0] + "m");
@@ -1147,8 +1192,8 @@ public class Controller implements IController {
                         if (runCamera) {
                             if (bufferedImageRGB != null)
                             {
+                                while(isWrittingTheImage);
                                 isComputingTheImage = true;
-
                                 IplImage rgbSrc = bufferedImageToIplImage(bufferedImageRGB);
                                 IplImage graySrc = bufferedImageToIplImage(bufferedImageToGray(bufferedImageRGB));
 
@@ -1178,7 +1223,6 @@ public class Controller implements IController {
     private void updateSensorThreadRunnable()
     {
         System.out.println("start update sensors");
-        setBatteryTime(20); // set battery for 20 minutes
         while (running)
         {
             if (runGPS) {
@@ -1206,11 +1250,7 @@ public class Controller implements IController {
             }
 
             if (!running) break;
-            if (runMotion) {
-                teleoperate(dir, vel);
-            }
 
-            if (!running) break;
             Delay.ms(1);
         }
         System.out.println("stop update sensors");
@@ -1222,13 +1262,17 @@ public class Controller implements IController {
         while (running) {
             requestAutomate();
             stateAutomate();
-
+            teleoperate();
             if (!getBatteryState()) {
                 System.err.println("Error: Robot out of battery...");
-                move(0, 1000);
-                kill();
+                isPowerEmpty = true;
+                break;
             }
             Delay.ms(1);
+        }
+        if (isPowerEmpty)
+        {
+            kill();
         }
         System.out.println("stop main");
     }
@@ -1261,21 +1305,70 @@ public class Controller implements IController {
     }
 
     private void stateAutomate() {
-        switch (currentState){
+        switch (currentState) {
             case None:
                 break;
             case Initialize:
-                requestState = States.Clean ;
+                requestState = States.Clean;
                 break;
             case Clean:
+                if (checkBatteryLowRoutine()) {
+                    break;
+                }
+                if (isObstacleDetected()) {
+                    dir = MotionDirections.Stop;
+                    requestState = States.Avoid;
+                    break;
+                }
+                dir = MotionDirections.Forward;
                 break;
             case Avoid:
+                if (checkBatteryLowRoutine()) {
+                    break;
+                }
+                if (hasOrientationAim) {
+                    double orientation = getGPSRz();
+                    double deltaOrientation = orientationAim - orientation;
+                    if (deltaOrientation > 180) {
+                        deltaOrientation -= 360;
+                    }
+                    else if (deltaOrientation < -180) {
+                        deltaOrientation += 360;
+                    }
+
+                    if (deltaOrientation > 3) {
+                        dir = MotionDirections.Left;
+                    }
+                    else if (deltaOrientation < -3) {
+                        dir = MotionDirections.Right;
+                    }
+                    else {
+                        dir = MotionDirections.Stop;
+                        hasOrientationAim = false;
+                        requestState = States.Clean;
+                    }
+                }
+                else {
+                    dir = MotionDirections.Stop;
+                    orientationAim = generateRotationAim();
+                    hasOrientationAim = true;
+                }
                 break;
             case Wander:
                 break;
             case Track:
                 break;
         }
+    }
+
+    private boolean checkBatteryLowRoutine() {
+        boolean bLow = isBatteryLow();
+        if (bLow) {
+            System.out.println("Battery Low !");
+            requestState = States.Wander;
+            dir = MotionDirections.Stop;
+        }
+        return bLow;
     }
     //endregion
 
