@@ -63,6 +63,19 @@
             </Label>
         </HBox>
 
+        <VBox GridPane.valignment="CENTER" alignment="CENTER" GridPane.columnIndex="2" GridPane.rowIndex="0">
+            <Label text="State"> <!--layoutX="834.0" layoutY="13.0"  -->
+                <font>
+                    <Font name="System Bold" size="30.0"/>
+                </font>
+            </Label>
+            <Label fx:id="lblState" text="None"> <!--layoutX="834.0" layoutY="13.0"  -->
+                <font>
+                    <Font size="15.0"/>
+                </font>
+            </Label>
+        </VBox>
+
         <GridPane prefWidth="0.0" GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER">
             <columnConstraints>
                 <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="100.0"/>
@@ -175,15 +188,14 @@
                GridPane.columnIndex="1" GridPane.halignment="LEFT" GridPane.rowIndex="2"
                GridPane.valignment="CENTER"/>
 
-        <HBox alignment="CENTER" translateX="-100.0" translateY="-30.0" GridPane.columnIndex="3" GridPane.rowIndex="2">
-            <Circle fx:id="rightWheelLed" radius="4.0" fill="darkgray" />
+        <HBox translateX="20.0" translateY="52.0" GridPane.columnIndex="3" GridPane.rowIndex="2">
+            <Circle fx:id="rightWheelLed" translateY="5" radius="4.0" fill="darkgray" />
             <Label fx:id="lblRightWheel" text=" Right:" />
         </HBox>
 
-        <HBox alignment="CENTER" translateX="-100.0" translateY="30.0" GridPane.columnIndex="3" GridPane.rowIndex="2">
-            <Circle fx:id="leftWheelLed" radius="4.0" fill="darkgray" />
+        <HBox translateX="20.0" translateY="82.0" GridPane.columnIndex="3" GridPane.rowIndex="2">
+            <Circle fx:id="leftWheelLed" translateY="5" radius="4.0" fill="darkgray" />
             <Label fx:id="lblLeftWheel" text=" Left:" />
         </HBox>
-
     </GridPane>
 </AnchorPane>

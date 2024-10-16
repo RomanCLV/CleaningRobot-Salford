@@ -72,6 +72,8 @@ public class Controller implements IController {
     @FXML
     private Label lblSensor5;
     @FXML
+    private Label lblState;
+    @FXML
     private Circle sonar0Led;
     @FXML
     private Circle sonar1Led;
@@ -848,6 +850,7 @@ public class Controller implements IController {
         resetUILabels();
         resetUILeds();
         setDisableAllMotionButtons(true);
+        lblState.setText(States.None.name());
     }
 
     private void setDisableAllMotionButtons(boolean setDisable)
@@ -1191,6 +1194,9 @@ public class Controller implements IController {
                             lblLeftWheel.setText(" Left: " + encoderValues[1]);
                         }
                         updateLeds();
+                        //lblState.setText(currentState == requestState ? currentState.name() : currentState.name() + " (→ " + requestState.name() +")");
+                        lblState.setText(currentState.name());
+
                         if (runCamera) {
                             if (bufferedImageRGB != null)
                             {
