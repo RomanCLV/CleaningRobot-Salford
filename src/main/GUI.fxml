@@ -7,6 +7,7 @@
 <?import javafx.scene.text.Font?>
 <?import javafx.scene.shape.Circle?>
 
+<?import javafx.scene.shape.Rectangle?>
 <AnchorPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
             prefHeight="512.0" prefWidth="1024.0"
             xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
@@ -47,7 +48,7 @@
 
         <HBox alignment="CENTER" GridPane.columnIndex="1">
             <Circle fx:id="cameraLed" radius="7.0" fill="darkgray"/>
-            <Label text="  Camera"><!--layoutX="700.0" layoutY="14.0" -->
+            <Label text="  Camera">
                 <font>
                     <Font name="System Bold" size="30.0"/>
                 </font>
@@ -56,7 +57,7 @@
 
         <HBox alignment="CENTER" GridPane.columnIndex="2" GridPane.rowIndex="2">
             <Circle fx:id="wheelsLed" radius="7.0" fill="darkgray"/>
-            <Label text="  Wheels"> <!--layoutX="834.0" layoutY="13.0"  -->
+            <Label text="  Wheels">
                 <font>
                     <Font name="System Bold" size="30.0"/>
                 </font>
@@ -64,16 +65,36 @@
         </HBox>
 
         <VBox GridPane.valignment="CENTER" alignment="CENTER" GridPane.columnIndex="2" GridPane.rowIndex="0">
-            <Label text="State"> <!--layoutX="834.0" layoutY="13.0"  -->
+            <Label text="State">
                 <font>
                     <Font name="System Bold" size="30.0"/>
                 </font>
             </Label>
-            <Label fx:id="lblState" text="None"> <!--layoutX="834.0" layoutY="13.0"  -->
+            <Label fx:id="lblState" text="None">
                 <font>
                     <Font size="15.0"/>
                 </font>
             </Label>
+        </VBox>
+
+        <VBox GridPane.valignment="CENTER" alignment="CENTER" GridPane.columnIndex="3" GridPane.rowIndex="0">
+            <Label text="Battery">
+                <font>
+                    <Font name="System Bold" size="30.0"/>
+                </font>
+            </Label>
+            <HBox alignment="CENTER" GridPane.columnIndex="2" GridPane.rowIndex="2">
+                <Label fx:id="lblBattery" text="0 %">
+                    <font>
+                        <Font size="15.0"/>
+                    </font>
+                </Label>
+                <Rectangle fx:id="batteryLed1" translateX="3" width="5" height="15" fill="darkgray" />
+                <Rectangle fx:id="batteryLed2" translateX="6" width="5" height="15" fill="darkgray"/>
+                <Rectangle fx:id="batteryLed3" translateX="9" width="5" height="15" fill="darkgray"/>
+                <Rectangle fx:id="batteryLed4" translateX="12" width="5" height="15" fill="darkgray"/>
+                <Rectangle fx:id="batteryLed5" translateX="15" width="5" height="15" fill="darkgray"/>
+            </HBox>
         </VBox>
 
         <GridPane prefWidth="0.0" GridPane.halignment="CENTER" GridPane.rowIndex="1" GridPane.valignment="CENTER">

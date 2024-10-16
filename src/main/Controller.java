@@ -8,7 +8,7 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
-import javafx.scene.shape.Circle;
+import javafx.scene.shape.*;
 import javafx.stage.WindowEvent;
 
 import javafx.scene.control.Label;
@@ -21,7 +21,7 @@ import javafx.concurrent.Task;
 
 import utils.*;
 
-import java.awt.*;
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.awt.image.DataBufferInt;
@@ -74,6 +74,8 @@ public class Controller implements IController {
     @FXML
     private Label lblState;
     @FXML
+    private Label lblBattery;
+    @FXML
     private Circle sonar0Led;
     @FXML
     private Circle sonar1Led;
@@ -85,6 +87,16 @@ public class Controller implements IController {
     private Circle sonar4Led;
     @FXML
     private Circle sonar5Led;
+    @FXML
+    private Rectangle batteryLed1;
+    @FXML
+    private Rectangle batteryLed2;
+    @FXML
+    private Rectangle batteryLed3;
+    @FXML
+    private Rectangle batteryLed4;
+    @FXML
+    private Rectangle batteryLed5;
     @FXML
     private Circle gpsLed;
     @FXML
@@ -155,13 +167,16 @@ public class Controller implements IController {
     private volatile boolean running = false;
 
     private MotionDirections dir = MotionDirections.Stop; // Direction.
-    private final int vel = 5;    // Velocity.
+    private final int vel = 3;    // Velocity.
 
     private boolean hasOrientationAim = false;
     private double orientationAim = 0.;
     //endregion
 
     //region Camera variables declaration
+    private CvPointDoublePair matchLocation;
+    private int imageRectangleCounter = 0;
+
     private double targetMinScore = 0.0;
     private double targetMaxScore = 0.0;
 
@@ -170,8 +185,9 @@ public class Controller implements IController {
     private final IntWA resolution = new IntWA(1);
     private final CharWA image = new CharWA(resolutionCamera * resolutionCamera * 3);
     private BufferedImage bufferedImageRGB;
+    private BufferedImage bufferedImageRGBRectangle;
     private volatile boolean isComputingTheImage = false;
-    private volatile boolean isWrittingTheImage = false;
+    private volatile boolean isWritingTheImage = false;
 
     private IplImage markerImage;
     //endregion
@@ -208,11 +224,11 @@ public class Controller implements IController {
 
     private final String VREP_ROBOT_NAME = "Roomba";
     private final String VREP_ROBOT_LEFT_WHEEL_NAME = "JointLeftWheel";
-    private final String VREP_ROBOT_RIGHT_WHEEL_NAME = "JointRightWheel";//"FHkfhkf";
+    private final String VREP_ROBOT_RIGHT_WHEEL_NAME = "JointRightWheel";
     private final String VREP_ROBOT_VISION_SENSOR_NAME = "Vision_sensor";
     private final String VREP_ROBOT_BASE_SONAR_NAME = "Proximity_sensor";
 
-    private final float MARKER_THRESHOLD = 0.6f;
+    private final float MARKER_THRESHOLD = 0.8f;
     //endregion
 
     //region Timers variables declaration
@@ -234,6 +250,31 @@ public class Controller implements IController {
     private States requestState = States.Initialize;
     //endregion
 
+    private static class CvPointDoublePair
+    {
+        public CvPoint point;
+        public double scaleFactor;
+
+        public CvPointDoublePair(CvPoint point, double scaleFactor)
+        {
+            this.point = point;
+            this.scaleFactor = scaleFactor;
+        }
+    }
+
+    private static class IplImageIntPair
+    {
+        public IplImage image;
+        public int scaleFactor;
+
+        public IplImageIntPair(IplImage image, int scaleFactor)
+        {
+            this.image = image;
+            this.scaleFactor = scaleFactor;
+        }
+    }
+
+    private IplImageIntPair[] resizedMarkers;
     private Stage primaryStage = null;
 
     //endregion
@@ -257,15 +298,15 @@ public class Controller implements IController {
     }
 
     private double getBatteryPercentage() {
-        double v = getBatteryCapacity();
-
-        if ((v >= 9.6) && (v <= 12)) return (100.0);
-        else if ((v >= 7.2) && (v < 9.6)) return (80.0);
-        else if ((v >= 4.8) && (v < 7.2)) return (60.0);
-        else if ((v >= 2.4) && (v < 4.8)) return (40.0);
-        else if ((v > 1.0) && (v < 2.4)) return (20.0);
-        else
-            return (0.0);
+//        double v = getBatteryCapacity();
+//        if ((v >= 9.6) && (v <= 12)) return (100.0);
+//        else if ((v >= 7.2) && (v < 9.6)) return (80.0);
+//        else if ((v >= 4.8) && (v < 7.2)) return (60.0);
+//        else if ((v >= 2.4) && (v < 4.8)) return (40.0);
+//        else if ((v > 1.0) && (v < 2.4)) return (20.0);
+//        else
+//            return (0.0);
+        return getBatteryCapacity() * 100. / MAX_BATT_VOLT;
     }
 
     private boolean getBatteryState() {
@@ -429,9 +470,9 @@ public class Controller implements IController {
         int result = vRep.simxGetVisionSensorImage(clientID, cameraHandle.getValue(), resolution, image, 2, remoteApi.simx_opmode_buffer);
         runningStateCameraIsOK = result != remoteApi.simx_return_remote_error_flag;
         if (!isComputingTheImage) {
-            isWrittingTheImage = true;
-                    bufferedImageRGB = charWAtoBufferedImage(image);
-            isWrittingTheImage = false;
+            isWritingTheImage = true;
+            bufferedImageRGB = charWAtoBufferedImage(image);
+            isWritingTheImage = false;
         }
     }
 
@@ -507,8 +548,11 @@ public class Controller implements IController {
         }
     }
 
-    private CvPoint findMarker(IplImage src) {
-        IplImage result = cvCreateImage(cvSize(src.width() - markerImage.width() + 1, src.height() - markerImage.height() + 1), IPL_DEPTH_32F, 1);
+    private CvPoint findMarkerOLD(IplImage src) {
+        IplImage result = cvCreateImage(
+                cvSize(src.width() - markerImage.width() + 1, src.height() - markerImage.height() + 1),
+                IPL_DEPTH_32F,
+                1);
 
         if (src.width() < markerImage.width() || src.height() < markerImage.height()) {
             System.out.println("Invalid dimensions.");
@@ -531,10 +575,104 @@ public class Controller implements IController {
         return null;
     }
 
-    private void drawRectangle(IplImage image, CvPoint matchLocation) {
-        cvRectangle(image, matchLocation,
-                cvPoint(matchLocation.x() + markerImage.width(), matchLocation.y() + markerImage.height()),
-                CvScalar.RED, 2, 8, 0);
+    private CvPointDoublePair findMarkerRT(IplImage src) {
+
+        // Boucle sur différents ratios de redimensionnement pour détecter le marqueur à différentes échelles
+        for (double scaleFactor = 0.15; scaleFactor <= 2.5; scaleFactor += 0.05) {
+            // Redimensionner le modèle (markerImage) à l'échelle actuelle
+            IplImage resizedMarker = cvCreateImage(
+                    cvSize((int) (markerImage.width() * scaleFactor), (int) (markerImage.height() * scaleFactor)),
+                    markerImage.depth(),
+                    markerImage.nChannels()
+            );
+            cvResize(markerImage, resizedMarker);  // Redimensionnement du modèle
+            // Vérifier si l'image source est assez grande pour contenir le modèle redimensionné
+            if (src.width() < resizedMarker.width() || src.height() < resizedMarker.height()) {
+                continue;  // Passer à l'échelle suivante si l'image source est trop petite
+            }
+
+            // Création de l'image résultat pour stocker les scores de correspondance
+            IplImage result = cvCreateImage(
+                    cvSize(src.width() - resizedMarker.width() + 1, src.height() - resizedMarker.height() + 1),
+                    IPL_DEPTH_32F, 1
+            );
+
+            // Effectuer la correspondance de modèles à l'échelle actuelle
+            cvMatchTemplate(src, resizedMarker, result, CV_TM_CCOEFF_NORMED);
+
+            // Trouver les valeurs min/max et les emplacements de correspondance
+            double[] minVal = new double[1];
+            double[] maxVal = new double[1];
+            CvPoint minLoc = new CvPoint();
+            CvPoint maxLoc = new CvPoint();
+            cvMinMaxLoc(result, minVal, maxVal, minLoc, maxLoc, null);
+
+            int width = resizedMarker.width();
+            int height = resizedMarker.height();
+            // Libérer les ressources liées à l'image redimensionnée et au résultat
+            cvReleaseImage(resizedMarker);
+            cvReleaseImage(result);
+
+            // Si la correspondance est au-dessus du seuil défini
+            if (maxVal[0] > MARKER_THRESHOLD) {
+                // Calcul des coordonnées du centre du marqueur
+                target.x(maxLoc.x() + width / 2);
+                target.y(maxLoc.y() + height / 2);
+                return new CvPointDoublePair(maxLoc, scaleFactor);  // Marqueur trouvé à cette échelle
+            }
+        }
+        return null;
+    }
+
+    private CvPointDoublePair findMarkerNext(IplImage src)
+    {
+        IplImageIntPair pair;
+        for (int i = 0; i < resizedMarkers.length; i++) {
+            // Redimensionner le modèle (markerImage) à l'échelle actuelle
+            pair  = resizedMarkers[i];
+            IplImage resizedMarker = pair.image;
+
+            // Vérifier si l'image source est assez grande pour contenir le modèle redimensionné
+            if (src.width() < resizedMarker.width() || src.height() < resizedMarker.height()) {
+                continue;  // Passer à l'échelle suivante si l'image source est trop petite
+            }
+
+            // Création de l'image résultat pour stocker les scores de correspondance
+            IplImage result = cvCreateImage(
+                    cvSize(src.width() - resizedMarker.width() + 1, src.height() - resizedMarker.height() + 1),
+                    IPL_DEPTH_32F, 1
+            );
+
+            // Effectuer la correspondance de modèles à l'échelle actuelle
+            cvMatchTemplate(src, resizedMarker, result, CV_TM_CCOEFF_NORMED);
+
+            // Trouver les valeurs min/max et les emplacements de correspondance
+            double[] minVal = new double[1];
+            double[] maxVal = new double[1];
+            CvPoint minLoc = new CvPoint();
+            CvPoint maxLoc = new CvPoint();
+            cvMinMaxLoc(result, minVal, maxVal, minLoc, maxLoc, null);
+            cvReleaseImage(result);
+
+            // Si la correspondance est au-dessus du seuil défini
+            if (maxVal[0] > MARKER_THRESHOLD) {
+                // Calcul des coordonnées du centre du marqueur
+                target.x(maxLoc.x() + resizedMarker.width() / 2);
+                target.y(maxLoc.y() + resizedMarker.height() / 2);
+                return new CvPointDoublePair(maxLoc, pair.scaleFactor / 100.);  // Marqueur trouvé à cette échelle
+            }
+        }
+
+        // Aucune correspondance trouvée pour  les échelles testées
+        return null;
+    }
+
+    private void drawRectangle(IplImage image, CvPointDoublePair matchLocation) {
+        CvPoint point = matchLocation.point;
+        double scaleFactor = matchLocation.scaleFactor;
+        cvRectangle(image, point,
+                cvPoint(point.x() + (int)(markerImage.width() * scaleFactor), point.y() + (int)(markerImage.height() * scaleFactor)),
+                CvScalar.BLUE, 2, 8, 0);
     }
 
     private IplImage bufferedImageToIplImage(BufferedImage bufferedImage) {
@@ -591,7 +729,7 @@ public class Controller implements IController {
     //endregion
 
     //region Motion Methods
-    private void resetButtonsStyle() {
+    private void resetMotionButtonsStyle() {
         btnRight.setStyle(defaultButtonStyle);
         btnStop.setStyle(defaultButtonStyle);
         btnLeft.setStyle(defaultButtonStyle);
@@ -668,7 +806,11 @@ public class Controller implements IController {
         return result;
     }
 
-    private void teleoperate() {
+    private void applyMove() {
+        if (!runningStateRightWheelIsOK || !runningStateLeftWheelIsOK)
+        {
+            return;
+        }
         switch (dir) {
             case Stop:
                 move(0);
@@ -692,6 +834,7 @@ public class Controller implements IController {
     //region UI methods
     private void handleCloseEvent()
     {
+        //releaseResizedMarkers();
         btnDisconnectPressed();
     }
 
@@ -785,31 +928,31 @@ public class Controller implements IController {
     }
 
     public void btnForwardPressed() {
-        resetButtonsStyle();
+        resetMotionButtonsStyle();
         btnForward.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Forward;
     }
 
     public void btnBackwardPressed() {
-        resetButtonsStyle();
+        resetMotionButtonsStyle();
         btnBack.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Backward;
     }
 
     public void btnLeftPressed() {
-        resetButtonsStyle();
+        resetMotionButtonsStyle();
         btnLeft.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Left;
     }
 
     public void btnRightPressed() {
-        resetButtonsStyle();
+        resetMotionButtonsStyle();
         btnRight.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Right;
     }
 
     public void btnStopPressed() {
-        resetButtonsStyle();
+        resetMotionButtonsStyle();
         btnStop.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Stop;
     }
@@ -829,6 +972,10 @@ public class Controller implements IController {
 
         lblRightWheel.setText(" Right:");
         lblLeftWheel.setText(" Left:");
+
+        lblState.setText("None");
+
+        lblBattery.setText("0 %");
     }
 
     private void resetUILeds()
@@ -838,19 +985,26 @@ public class Controller implements IController {
         rightWheelLed.setFill(GRAY_LED);
         leftWheelLed.setFill(GRAY_LED);
         wheelsLed.setFill(GRAY_LED);
+
         for (Circle sonarLed : sonarLeds) {
             sonarLed.setFill(GRAY_LED);
         }
+
+        batteryLed1.setFill(GRAY_LED);
+        batteryLed2.setFill(GRAY_LED );
+        batteryLed3.setFill(GRAY_LED);
+        batteryLed4.setFill(GRAY_LED);
+        batteryLed5.setFill(GRAY_LED);
     }
 
     private void resetUIGeneral()
     {
         btnConnect.setDisable(false);
         btnConnect.setText("Connect");
+        btnConnect.setStyle(defaultButtonStyle);
         resetUILabels();
         resetUILeds();
         setDisableAllMotionButtons(true);
-        lblState.setText(States.None.name());
     }
 
     private void setDisableAllMotionButtons(boolean setDisable)
@@ -874,6 +1028,27 @@ public class Controller implements IController {
         wheelsLed.setFill((runningStateRightWheelIsOK && runningStateLeftWheelIsOK) ? GREEN_LED : ((runningStateRightWheelIsOK || runningStateLeftWheelIsOK) ? ORANGE_LED : RED_LED));
         cameraLed.setFill(runningStateCameraIsOK ? GREEN_LED :  RED_LED);
         gpsLed.setFill(runningStateGPSIsOK ? GREEN_LED :  RED_LED);
+    }
+
+    private void updateBattery()
+    {
+        int battery = (int)Math.round(getBatteryPercentage());
+        lblBattery.setText(battery + " %");
+        batteryLed1.setFill((battery >= 0) ? GREEN_LED : GRAY_LED);
+        batteryLed2.setFill((battery >= 20) ? GREEN_LED : GRAY_LED);
+        batteryLed3.setFill((battery >= 40) ? GREEN_LED : GRAY_LED);
+        batteryLed4.setFill((battery >= 60) ? GREEN_LED : GRAY_LED);
+        batteryLed5.setFill((battery >= 80) ? GREEN_LED : GRAY_LED);
+
+        if (battery < 40 && battery >= 20)
+        {
+            batteryLed1.setFill(ORANGE_LED);
+            batteryLed2.setFill(ORANGE_LED);
+        }
+        else if (battery < 20)
+        {
+            batteryLed1.setFill(RED_LED);
+        }
     }
 
     public void btnPositionChartPressed()
@@ -941,6 +1116,40 @@ public class Controller implements IController {
         sonarLeds[4] = sonar4Led;
         sonarLeds[5] = sonar5Led;
         setDisableAllMotionButtons(true);
+        //prepareResizedMarkers();
+    }
+
+    private void prepareResizedMarkers()
+    {
+        int count = ((250 - 15) / 5) + 1;
+        resizedMarkers = new IplImageIntPair[count];
+        int scaleFactorInt = 15;
+        double scaleFactor;
+        int width = markerImage.width();
+        int height = markerImage.height();
+        int nChannels = markerImage.nChannels();
+        int depth = markerImage.depth();
+
+        for (int i = 0; i < count; i++) {
+            scaleFactor = scaleFactorInt / 100.;
+            // Redimensionner le modèle (markerImage) à l'échelle actuelle
+            IplImage resizedMarker = cvCreateImage(
+                    cvSize((int) (width * scaleFactor), (int) (height * scaleFactor)),
+                    depth,
+                    nChannels
+            );
+            cvResize(markerImage, resizedMarker);  // Redimensionnement du modèle
+            resizedMarkers[i] = new IplImageIntPair(resizedMarker, scaleFactorInt);
+            scaleFactorInt += 5;
+        }
+    }
+
+    private void releaseResizedMarkers()
+    {
+        for (int i = 0; i < resizedMarkers.length; i++) {
+            cvReleaseImage(resizedMarkers[i].image);
+            resizedMarkers[i] = null;
+        }
     }
 
     private boolean connectToVrep()
@@ -1165,7 +1374,9 @@ public class Controller implements IController {
             if (start) updateUIThread.start();
         }
     }
+    //endregion
 
+    //region threads
     private void updateUIThreadRunnable()
     {
         System.out.println("start update UI");
@@ -1175,11 +1386,16 @@ public class Controller implements IController {
                 public void run() {
                     if (running)
                     {
+                        lblState.setText(currentState.name());
+                        updateBattery();
+                        updateLeds();
+
                         if (runGPS) {
-                            lblGpsX.setText("X: " + Math.round(gpsValues[0]*100.)/100.);
-                            lblGpsY.setText("Y: " + Math.round(gpsValues[1]*100.)/100.);
-                            lblGpsZ.setText("Z: " + Math.round(gpsValues[2]*100.)/100.);
+                            lblGpsX.setText("X: " + Math.round(gpsValues[0] * 100.) / 100.);
+                            lblGpsY.setText("Y: " + Math.round(gpsValues[1] * 100.) / 100.);
+                            lblGpsZ.setText("Z: " + Math.round(gpsValues[2] * 100.) / 100.);
                         }
+
                         if (runAtLeastOneSonar) {
                             lblSensor0.setText(" " + sonarValues[0] + "m");
                             lblSensor1.setText(" " + sonarValues[1] + "m");
@@ -1189,40 +1405,86 @@ public class Controller implements IController {
                             lblSensor5.setText(" " + sonarValues[5] + "m");
                             lblSensor5.setText(" " + sonarValues[5] + "m");
                         }
+
                         if (runWheelEncoder) {
                             lblRightWheel.setText(" Right: " + encoderValues[0]);
                             lblLeftWheel.setText(" Left: " + encoderValues[1]);
                         }
-                        updateLeds();
-                        //lblState.setText(currentState == requestState ? currentState.name() : currentState.name() + " (→ " + requestState.name() +")");
-                        lblState.setText(currentState.name());
-
-                        if (runCamera) {
-                            if (bufferedImageRGB != null)
-                            {
-                                while(isWrittingTheImage);
-                                isComputingTheImage = true;
-                                IplImage rgbSrc = bufferedImageToIplImage(bufferedImageRGB);
-                                IplImage graySrc = bufferedImageToIplImage(bufferedImageToGray(bufferedImageRGB));
-
-                                if (rgbSrc != null && graySrc != null)
-                                {
-                                    CvPoint matchLocation = findMarker(graySrc);
-                                    if (matchLocation != null) {
-                                        drawRectangle(rgbSrc, matchLocation);
-                                        displayBufferedImage(iplImageToBufferedImage(rgbSrc));
-                                    }
-                                    else
-                                    {
-                                        displayBufferedImage(bufferedImageRGB);
-                                    }
-                                }
-                                isComputingTheImage = false;
-                            }
-                        }
                     }
                 }
             });
+
+            if (bufferedImageRGB != null)
+            {
+                if (isComputingTheImage)
+                {
+                    Platform.runLater(new Runnable() {
+                        @Override
+                        public void run() {
+                            while (isWritingTheImage);
+                            isComputingTheImage = true;
+                            if (imageRectangleCounter < 3 && matchLocation != null)
+                            {
+                                IplImage clone = bufferedImageToIplImage(bufferedImageRGB);
+                                if (clone == null)
+                                {
+                                    displayBufferedImage(bufferedImageRGB);
+                                }
+                                else
+                                {
+                                    drawRectangle(clone, matchLocation);
+                                    displayBufferedImage(iplImageToBufferedImage(clone));
+                                }
+                            }
+                            else
+                            {
+                                displayBufferedImage(bufferedImageRGB);
+                            }
+                            imageRectangleCounter++;
+
+                            System.out.println("skip");
+                            isComputingTheImage = false;
+                        }
+                    });
+                }
+                else
+                {
+                    Platform.runLater(new Runnable() {
+                        @Override
+                        public void run() {
+                            while (isWritingTheImage);
+                            isComputingTheImage = true;
+
+                            IplImage rgbSrc = bufferedImageToIplImage(bufferedImageRGB);
+                            IplImage graySrc = bufferedImageToIplImage(bufferedImageToGray(bufferedImageRGB));
+
+                            if (rgbSrc != null && graySrc != null)
+                            {
+                                long startTime = System.currentTimeMillis();
+                                matchLocation = findMarkerRT(graySrc);
+                                //matchLocation = findMarkerNext(graySrc);
+                                long endTime = System.currentTimeMillis();
+                                System.out.println(endTime - startTime);
+
+                                if (matchLocation != null) {
+                                    imageRectangleCounter = 0;
+                                    drawRectangle(rgbSrc, matchLocation);
+                                    displayBufferedImage(iplImageToBufferedImage(rgbSrc));
+                                }
+                                else
+                                {
+                                    displayBufferedImage(bufferedImageRGB);
+                                }
+                            }
+                            else
+                            {
+                                displayBufferedImage(bufferedImageRGB);
+                            }
+                            isComputingTheImage = false;
+                        }
+                    });
+                }
+            }
             Delay.ms(33);
         }
         System.out.println("stop update UI");
@@ -1270,7 +1532,7 @@ public class Controller implements IController {
         while (running) {
             requestAutomate();
             stateAutomate();
-            teleoperate();
+            applyMove();
             if (!getBatteryState()) {
                 System.err.println("Error: Robot out of battery...");
                 isPowerEmpty = true;
@@ -1282,7 +1544,12 @@ public class Controller implements IController {
         {
             setDisableAllMotionButtons(true);
             kill();
-            resetUIGeneral();
+            Platform.runLater(new Runnable() {
+                @Override
+                public void run() {
+                    resetUIGeneral();
+                }
+            });
         }
         System.out.println("stop main");
     }
@@ -1319,7 +1586,7 @@ public class Controller implements IController {
             case None:
                 break;
             case Initialize:
-                requestState = States.Clean;
+//                requestState = States.Clean;
                 break;
             case Clean:
                 if (checkBatteryLowRoutine()) {
