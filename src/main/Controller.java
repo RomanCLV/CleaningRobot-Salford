@@ -767,22 +767,14 @@ public class Controller implements IController {
                 return null;
             }
 
-            private void end()
-            {
-                btnConnect.setDisable(false);
-                btnConnect.setText("Connect");
-                resetUILabels();
-                resetUILeds();
-            }
-
             @Override
             protected void succeeded() {
-                end();
+                resetUIGeneral();
             }
 
             @Override
             protected void failed() {
-                end();
+                resetUIGeneral();
             }
         };
 
@@ -847,6 +839,15 @@ public class Controller implements IController {
         for (Circle sonarLed : sonarLeds) {
             sonarLed.setFill(GRAY_LED);
         }
+    }
+
+    private void resetUIGeneral()
+    {
+        btnConnect.setDisable(false);
+        btnConnect.setText("Connect");
+        resetUILabels();
+        resetUILeds();
+        setDisableAllMotionButtons(true);
     }
 
     private void setDisableAllMotionButtons(boolean setDisable)
@@ -1273,7 +1274,9 @@ public class Controller implements IController {
         }
         if (isPowerEmpty)
         {
+            setDisableAllMotionButtons(true);
             kill();
+            resetUIGeneral();
         }
         System.out.println("stop main");
     }
