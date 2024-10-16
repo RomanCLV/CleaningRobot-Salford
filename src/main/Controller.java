@@ -42,7 +42,7 @@ import static com.googlecode.javacv.cpp.opencv_imgproc.*;
  * Comments : None.
  **/
 
-public class Controller implements IController {
+public class Controller extends BaseController {
     //region Variables declaration
     //region GUI variables declaration
     @FXML
@@ -275,8 +275,6 @@ public class Controller implements IController {
     }
 
     private IplImageIntPair[] resizedMarkers;
-    private Stage primaryStage = null;
-
     //endregion
 
     //region Methods
@@ -1056,10 +1054,12 @@ public class Controller implements IController {
         if (positionChartsStage == null)
         {
             Parent root = null;
+            FXMLLoader fxmlLoader = null;
             try
             {
-                FXMLLoader fxmlLoader = new FXMLLoader(getClass().getResource("PositionChartsGUI.fxml"));
+                fxmlLoader = new FXMLLoader(getClass().getResource("PositionChartsGUI.fxml"));
                 root = fxmlLoader.load();
+
             }
             catch (Exception e)
             {
@@ -1073,6 +1073,8 @@ public class Controller implements IController {
                 positionChartsStage = new Stage();
                 positionChartsStage.setTitle("Position Charts");
                 positionChartsStage.setScene(new Scene(root));
+
+                ((BaseController)fxmlLoader.getController()).setStage(positionChartsStage);
 
                 positionChartsStage.setOnCloseRequest((WindowEvent event) -> handlePositionChartsCloseEvent());
                 positionChartsStage.show();
@@ -1441,8 +1443,6 @@ public class Controller implements IController {
                                 displayBufferedImage(bufferedImageRGB);
                             }
                             imageRectangleCounter++;
-
-                            System.out.println("skip");
                             isComputingTheImage = false;
                         }
                     });
@@ -1460,11 +1460,11 @@ public class Controller implements IController {
 
                             if (rgbSrc != null && graySrc != null)
                             {
-                                long startTime = System.currentTimeMillis();
+                                //long startTime = System.currentTimeMillis();
                                 matchLocation = findMarkerRT(graySrc);
                                 //matchLocation = findMarkerNext(graySrc);
-                                long endTime = System.currentTimeMillis();
-                                System.out.println(endTime - startTime);
+                                //long endTime = System.currentTimeMillis();
+                                //System.out.println(endTime - startTime);
 
                                 if (matchLocation != null) {
                                     imageRectangleCounter = 0;
