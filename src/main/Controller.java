@@ -167,21 +167,29 @@ public class Controller extends BaseController {
     private volatile boolean running = false;
 
     private MotionDirections dir = MotionDirections.Stop; // Direction.
-    private final int vel = 3;    // Velocity.
+    private final float vel = 3f;
+    private final float lowVel = 1f;
 
     private boolean hasOrientationAim = false;
     private double orientationAim = 0.;
+    private boolean isSearching = false;
+    private double searchingMaxAngle;
+    private double searchingMinAngle;
+
+    private boolean hasForwardTimestamp = false;
+    private long forwardTimestamp;
     //endregion
 
     //region Camera variables declaration
     private CvPointDoublePair matchLocation;
+    private final CvPoint target = new CvPoint();
+
     private int imageRectangleCounter = 0;
 
     private double targetMinScore = 0.0;
     private double targetMaxScore = 0.0;
 
     private final int resolutionCamera = 256;
-    private final CvPoint target = new CvPoint();
     private final IntWA resolution = new IntWA(1);
     private final CharWA image = new CharWA(resolutionCamera * resolutionCamera * 3);
     private BufferedImage bufferedImageRGB;
@@ -228,7 +236,7 @@ public class Controller extends BaseController {
     private final String VREP_ROBOT_VISION_SENSOR_NAME = "Vision_sensor";
     private final String VREP_ROBOT_BASE_SONAR_NAME = "Proximity_sensor";
 
-    private final float MARKER_THRESHOLD = 0.8f;
+    private final float MARKER_THRESHOLD = 0.7f;
     //endregion
 
     //region Timers variables declaration
@@ -248,6 +256,8 @@ public class Controller extends BaseController {
     //region States variables declaration
     private States currentState = States.None;
     private States requestState = States.Initialize;
+
+    private boolean wasTracking = false;
     //endregion
 
     private static class CvPointDoublePair
@@ -313,7 +323,7 @@ public class Controller extends BaseController {
     }
 
     private boolean isBatteryLow(){
-        return getBatteryPercentage() <= 20.0;
+        return getBatteryPercentage() <= 50.0;
     }
 
     //endregion
@@ -460,6 +470,20 @@ public class Controller extends BaseController {
 
     private boolean isObstacleDetected(){
         return sonarValues[2] <= 0.1 || sonarValues[3] <= 0.1;
+    }
+
+    private int whereObstacleDetected(int startIndex, int endIndex) {
+        int i;
+        double minDistance = 9999999;
+        int minIndex = -1;
+        for (i = startIndex; i <= endIndex;i++) {
+
+            if(minDistance > sonarValues[i]){
+                minDistance = sonarValues[i];
+                minIndex = i;
+            }
+        }
+        return minIndex;
     }
     //endregion
 
@@ -795,13 +819,7 @@ public class Controller extends BaseController {
     }
 
     private double generateRotationAim() {
-        double result = getGPSRz() + -180 + (360 * Rand.getDouble());
-        if (result > 180){
-            result = result - 360;
-        } else if (result < -180){
-            result = result + 360;
-        }
-        return result;
+        return clapAngle(getGPSRz() + -180 + (360 * Rand.getDouble()));
     }
 
     private void applyMove() {
@@ -820,10 +838,10 @@ public class Controller extends BaseController {
                 move(-vel);
                 break;
             case Right:
-                turnSpot(+(float)(vel / 2));
+                turnSpot(+((isBatteryLow() ? lowVel : vel) / 2f));
                 break;
             case Left:
-                turnSpot(-(float)(vel / 2));
+                turnSpot(-((isBatteryLow() ? lowVel : vel) / 2f));
                 break;
         }
     }
@@ -1229,7 +1247,7 @@ public class Controller extends BaseController {
             initTimers(true);
 
             isPowerEmpty = false;
-            setBatteryTime(10); // set battery for 20 minutes
+            setBatteryTime(2); // set battery for 20 minutes
             initThreads(true);
         }
     }
@@ -1287,6 +1305,7 @@ public class Controller extends BaseController {
             runningStateSonars[i] = result == remoteApi.simx_return_ok;
             runAtLeastOneSonar |= runningStateSonars[i];
         }
+        sonarValues = readSonars();
     }
 
     private void firstReadAllSensors()
@@ -1418,7 +1437,7 @@ public class Controller extends BaseController {
 
             if (bufferedImageRGB != null)
             {
-                if (isComputingTheImage)
+                if (currentState != States.Track || isComputingTheImage)
                 {
                     Platform.runLater(new Runnable() {
                         @Override
@@ -1460,11 +1479,8 @@ public class Controller extends BaseController {
 
                             if (rgbSrc != null && graySrc != null)
                             {
-                                //long startTime = System.currentTimeMillis();
                                 matchLocation = findMarkerRT(graySrc);
                                 //matchLocation = findMarkerNext(graySrc);
-                                //long endTime = System.currentTimeMillis();
-                                //System.out.println(endTime - startTime);
 
                                 if (matchLocation != null) {
                                     imageRectangleCounter = 0;
@@ -1569,12 +1585,16 @@ public class Controller extends BaseController {
                     currentState = States.Clean;
                     break;
                 case Avoid:
+                    wasTracking = (currentState == States.Track);
                     currentState = States.Avoid;
                     break;
                 case Wander:
                     currentState = States.Wander;
                     break;
                 case Track:
+                    wasTracking = false;
+                    isSearching = false;
+                    matchLocation = null;
                     currentState = States.Track;
                     break;
             }
@@ -1586,7 +1606,7 @@ public class Controller extends BaseController {
             case None:
                 break;
             case Initialize:
-//                requestState = States.Clean;
+                requestState = States.Clean;
                 break;
             case Clean:
                 if (checkBatteryLowRoutine()) {
@@ -1600,49 +1620,143 @@ public class Controller extends BaseController {
                 dir = MotionDirections.Forward;
                 break;
             case Avoid:
-                if (checkBatteryLowRoutine()) {
-                    break;
-                }
                 if (hasOrientationAim) {
-                    double orientation = getGPSRz();
-                    double deltaOrientation = orientationAim - orientation;
-                    if (deltaOrientation > 180) {
-                        deltaOrientation -= 360;
-                    }
-                    else if (deltaOrientation < -180) {
-                        deltaOrientation += 360;
-                    }
-
-                    if (deltaOrientation > 3) {
-                        dir = MotionDirections.Left;
-                    }
-                    else if (deltaOrientation < -3) {
-                        dir = MotionDirections.Right;
-                    }
-                    else {
-                        dir = MotionDirections.Stop;
+                    if (rotateToAim()) {
                         hasOrientationAim = false;
-                        requestState = States.Clean;
+                        dir = MotionDirections.Stop;
+                        if (wasTracking)
+                        {
+                            hasForwardTimestamp = true;
+                            forwardTimestamp = System.currentTimeMillis() + 1500; // + 3 secs
+                            dir = MotionDirections.Forward;
+                        }
+                        else {
+                            requestState = States.Clean;
+                        }
                     }
                 }
                 else {
                     dir = MotionDirections.Stop;
-                    orientationAim = generateRotationAim();
+                    orientationAim = wasTracking ? generateRotationAimTrackAvoid() : generateRotationAim();
                     hasOrientationAim = true;
+                }
+
+                if (hasForwardTimestamp)
+                {
+                    if (moveToForwardTimestamp())
+                    {
+                        dir = MotionDirections.Stop;
+                        hasForwardTimestamp = false;
+                        requestState = wasTracking ? States.Track : States.Wander;
+                    }
                 }
                 break;
             case Wander:
+                if (!hasForwardTimestamp)
+                {
+                    forwardTimestamp = System.currentTimeMillis() + 1500; // + 3 secs
+                    hasForwardTimestamp = true;
+                }
+                else {
+                    if (isObstacleDetected())
+                    {
+                        dir = MotionDirections.Stop;
+                        hasForwardTimestamp = false;
+                        requestState = States.Avoid;
+                        break;
+                    }
+                    if (moveToForwardTimestamp()) {
+                        dir = MotionDirections.Stop;
+                        hasForwardTimestamp = false;
+                        requestState = States.Track;
+                    }
+                }
                 break;
             case Track:
+                // on ne verifie l'etat de la batterie car on cherche a rejoindre la base
+                if (isObstacleDetected()) {
+                    dir = MotionDirections.Stop;
+                    requestState = States.Avoid;
+                    break;
+                }
+                if (matchLocation == null) {
+                    if (!isSearching) {
+                        searchingMaxAngle = clapAngle(getGPSRz() - 1);
+                        searchingMinAngle = clapAngle(getGPSRz() - 10);
+                        isSearching = true;
+                    }
+                    else if (getGPSRz() <= searchingMaxAngle && getGPSRz() >= searchingMinAngle) {
+                        System.out.println("ici");
+                        requestState = States.Wander;
+                    }
+                    else {
+                        dir = MotionDirections.Left;
+                    }
+                }
+                else {
+                    dir = MotionDirections.Stop;
+                    if (target.x() > (resolutionCamera/2)+10){
+                        dir = MotionDirections.Right;
+                    }
+                    else if (target.x() < (resolutionCamera/2)-10){
+                        dir = MotionDirections.Left;
+                    }
+                    else {
+                        dir = MotionDirections.Forward;
+                    }
+                }
                 break;
         }
+    }
+
+    private  double generateRotationAimTrackAvoid()
+    {
+        int angle = whereObstacleDetected(1, 4) <= 2 ? -90 : 90;
+        return clapAngle(getGPSRz() + angle);
+    }
+
+    private double clapAngle(double angle){
+        if (angle > 180){
+            angle = angle - 360;
+        } else if (angle < -180){
+            angle = angle + 360;
+        }
+        return angle;
+    }
+
+    private boolean rotateToAim() {
+        double orientation = getGPSRz();
+        double deltaOrientation = clapAngle(orientationAim - orientation);
+        boolean result = false;
+
+        if (deltaOrientation > 3) {
+            dir = MotionDirections.Left;
+        }
+        else if (deltaOrientation < -3) {
+            dir = MotionDirections.Right;
+        }
+        else {
+            result = true;
+        }
+
+        return result;
+    }
+
+    private boolean moveToForwardTimestamp()
+    {
+        boolean result = System.currentTimeMillis() >= forwardTimestamp;
+        if (!result)
+        {
+            dir = MotionDirections.Forward;
+        }
+        return result;
     }
 
     private boolean checkBatteryLowRoutine() {
         boolean bLow = isBatteryLow();
         if (bLow) {
             System.out.println("Battery Low !");
-            requestState = States.Wander;
+            requestState = States.Track;
             dir = MotionDirections.Stop;
         }
         return bLow;
