@@ -8,5 +8,6 @@ public enum States {
     Wander,
     Track,
     StationApproach,
-    Charging
+    Charging,
+    Manual
 }

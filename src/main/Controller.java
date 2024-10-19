@@ -49,6 +49,10 @@ public class Controller extends BaseController {
     @FXML
     private Button btnConnect;
     @FXML
+    private Button btnAutomaticMode;
+    @FXML
+    private Button btnManualMode;
+    @FXML
     private Button btnRight;
     @FXML
     private Button btnLeft;
@@ -169,6 +173,34 @@ public class Controller extends BaseController {
     private final int    LEFT_RIGHT_ALTERNATION_THRESHOLD = 6;
     //endregion
 
+    //region Robot variables declaration
+    private volatile boolean running = false;
+    private OperatingMode operatingMode = OperatingMode.Automatic;
+    private boolean isPowerEmpty;
+
+    private MotionDirections dir = MotionDirections.Stop; // Direction.
+    private volatile double gpsX;
+    private volatile double gpsY;
+    private volatile double gpsRz;
+    private final float defaultVelocity = 3f;
+    private final float lowVelocity = 1f;
+    private final float veryLowVelocity = 0.5f;
+    private float currentVelocity = defaultVelocity;
+
+    private boolean hasOrientationAim = false;
+    private double orientationAim = 0.;
+    private boolean isSearchingMarker = false;
+    private double searchingMaxAngle;
+    private double searchingMinAngle;
+    private MotionDirections searchingDir = MotionDirections.Stop;
+    private int goToMarkerLeftRightAlternationCounter = 0;
+
+    private boolean hasForwardTimestamp = false;
+    private long forwardTimestamp;
+
+    private double batteryChargingValue = 0.;
+    //endregion
+
     //region Sensors variables declaration
     private final int SONARS_NUMBER = 6;
     private final int WHEEL_NUMBER = 2; // LEFT-RIGHT
@@ -194,34 +226,6 @@ public class Controller extends BaseController {
     private final IntW leftWheelHandle = new IntW(-1);
     private final IntW rightWheelHandle = new IntW(-1);
     private final IntW[] sonarsHandles = new IntW[SONARS_NUMBER];
-
-    private boolean isPowerEmpty;
-    //endregion
-
-    //region Robot variables declaration
-    private volatile boolean running = false;
-
-    private MotionDirections dir = MotionDirections.Stop; // Direction.
-    private volatile double gpsX;
-    private volatile double gpsY;
-    private volatile double gpsRz;
-    private final float defaultVelocity = 3f;
-    private final float lowVelocity = 1f;
-    private final float veryLowVelocity = 0.5f;
-    private float currentVelocity = defaultVelocity;
-
-    private boolean hasOrientationAim = false;
-    private double orientationAim = 0.;
-    private boolean isSearchingMarker = false;
-    private double searchingMaxAngle;
-    private double searchingMinAngle;
-    private MotionDirections searchingDir = MotionDirections.Stop;
-    private int goToMarkerLeftRightAlternationCounter = 0;
-
-    private boolean hasForwardTimestamp = false;
-    private long forwardTimestamp;
-
-    private double batteryChargingValue = 0.;
     //endregion
 
     //region Camera variables declaration
@@ -871,6 +875,18 @@ public class Controller extends BaseController {
         new Thread(task).start();
     }
 
+    public void btnAutomaticModePressed()
+    {
+        operatingMode = OperatingMode.Automatic;
+        updateOperatingModeButtons();
+    }
+
+    public void btnManualModePressed()
+    {
+        operatingMode = OperatingMode.Manual;
+        updateOperatingModeButtons();
+    }
+
     public void btnForwardPressed()
     {
         resetMotionButtonsStyle();
@@ -904,6 +920,43 @@ public class Controller extends BaseController {
         resetMotionButtonsStyle();
         btnStop.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Stop;
+    }
+
+    public void btnPositionChartPressed()
+    {
+        if (positionChartsStage == null)
+        {
+            Parent root = null;
+            FXMLLoader fxmlLoader = null;
+            try
+            {
+                fxmlLoader = new FXMLLoader(getClass().getResource("PositionChartsGUI.fxml"));
+                root = fxmlLoader.load();
+
+            }
+            catch (Exception e)
+            {
+                Dialog<Void> d = new Dialog<>();
+                d.setTitle("Error");
+                d.setContentText("Unable to open the Position Charts GUI.");
+                d.showAndWait();
+            }
+            if (root != null)
+            {
+                positionChartsStage = new Stage();
+                positionChartsStage.setTitle("Position Charts");
+                positionChartsStage.setScene(new Scene(root));
+
+                ((BaseController)fxmlLoader.getController()).setStage(positionChartsStage);
+
+                positionChartsStage.setOnCloseRequest((WindowEvent event) -> handlePositionChartsCloseEvent());
+                positionChartsStage.show();
+            }
+        }
+        else
+        {
+            positionChartsStage.requestFocus();
+        }
     }
 
     private void resetUILabels()
@@ -1001,41 +1054,11 @@ public class Controller extends BaseController {
         }
     }
 
-    public void btnPositionChartPressed()
+    private void updateOperatingModeButtons()
     {
-        if (positionChartsStage == null)
-        {
-            Parent root = null;
-            FXMLLoader fxmlLoader = null;
-            try
-            {
-                fxmlLoader = new FXMLLoader(getClass().getResource("PositionChartsGUI.fxml"));
-                root = fxmlLoader.load();
-
-            }
-            catch (Exception e)
-            {
-                Dialog<Void> d = new Dialog<>();
-                d.setTitle("Error");
-                d.setContentText("Unable to open the Position Charts GUI.");
-                d.showAndWait();
-            }
-            if (root != null)
-            {
-                positionChartsStage = new Stage();
-                positionChartsStage.setTitle("Position Charts");
-                positionChartsStage.setScene(new Scene(root));
-
-                ((BaseController)fxmlLoader.getController()).setStage(positionChartsStage);
-
-                positionChartsStage.setOnCloseRequest((WindowEvent event) -> handlePositionChartsCloseEvent());
-                positionChartsStage.show();
-            }
-        }
-        else
-        {
-            positionChartsStage.requestFocus();
-        }
+        boolean isAutomaticMode = operatingMode == OperatingMode.Automatic;
+        btnAutomaticMode.setDisable(isAutomaticMode);
+        btnManualMode.setDisable(!isAutomaticMode);
     }
 
     private void updateUI()
@@ -1047,9 +1070,9 @@ public class Controller extends BaseController {
             updateLeds();
 
             if (runGPS) {
-                lblGpsX.setText("X: " + Math.round(getGpsX() * 100.) / 100.);
-                lblGpsY.setText("Y: " + Math.round(getGpsY() * 100.) / 100.);
-                lblGpsTheta.setText("θ: " + Math.round(getGpsRz() * 100.) / 100.);
+                lblGpsX.setText("X: " + Math.round(getGpsX() * 100.) / 100. + "m");
+                lblGpsY.setText("Y: " + Math.round(getGpsY() * 100.) / 100. + "m");
+                lblGpsTheta.setText("θ: " + Math.round(getGpsRz() * 100.) / 100. + "°");
             }
 
             if (runAtLeastOneSonar) {
@@ -1160,6 +1183,7 @@ public class Controller extends BaseController {
         sonarLeds[4] = sonar4Led;
         sonarLeds[5] = sonar5Led;
         setDisableAllMotionButtons(true);
+        updateOperatingModeButtons();
         //prepareResizedMarkers();
     }
 
@@ -1270,7 +1294,6 @@ public class Controller extends BaseController {
             running = true;
 
             initTimers(true);
-
             initThreads(true);
         }
     }
@@ -1531,13 +1554,28 @@ public class Controller extends BaseController {
     //region Automate Methods
     private void requestAutomate()
     {
+        if (operatingMode == OperatingMode.Manual && currentState != States.Manual) {
+            requestState = States.Manual;
+        }
+        else if (currentState == States.Manual && operatingMode != OperatingMode.Manual) {
+            requestState = States.Initialize;
+        }
         if (requestState != currentState) {
             switch (requestState) {
                 case None:
                     currentState = States.None;
                     break;
                 case Initialize:
+                    resetMotionButtonsStyle();
+                    setDisableAllMotionButtons(true);
                     currentState = States.Initialize;
+                    break;
+                case Manual:
+                    btnStopPressed();
+                    forceStop();
+                    setDisableAllMotionButtons(false);
+                    requestState = States.Manual; // cancel request of forceStop()
+                    currentState = States.Manual;
                     break;
                 case Clean:
                     currentState = States.Clean;
@@ -1578,6 +1616,11 @@ public class Controller extends BaseController {
                 break;
             case Initialize:
                 requestState = States.Clean;
+                break;
+            case Manual:
+                if (isObstacleDetected() && dir == MotionDirections.Forward) {
+                    dir = MotionDirections.Stop;
+                }
                 break;
             case Clean:
                 if (isBatteryLow()) {
