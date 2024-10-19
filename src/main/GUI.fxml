@@ -27,22 +27,25 @@
         </rowConstraints>
 
         <VBox GridPane.rowSpan="3" translateY="11">
-            <Button fx:id="btnAutomaticMode" maxHeight="35.0" maxWidth="35.0" minHeight="35.0" minWidth="35.0"
-                    mnemonicParsing="false" onAction="#btnAutomaticModePressed" prefHeight="35.0" prefWidth="35.0"
+            <Button fx:id="btnAutomaticMode" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
+                    mnemonicParsing="false" onAction="#btnAutomaticModePressed" prefHeight="38.0" prefWidth="38.0"
                     text="A"/>
-            <Button fx:id="btnManualMode" translateY="5" maxHeight="35.0" maxWidth="35.0" minHeight="35.0" minWidth="35.0"
-                    mnemonicParsing="false" onAction="#btnManualModePressed" prefHeight="35.0" prefWidth="35.0"
+            <Button fx:id="btnManualMode" translateY="5" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
+                    mnemonicParsing="false" onAction="#btnManualModePressed" prefHeight="38.0" prefWidth="38.0"
                     text="M"/>
 
-            <Button fx:id="btnDefaultSpeed" translateY="30" maxHeight="35.0" maxWidth="35.0" minHeight="35.0" minWidth="35.0"
-                    mnemonicParsing="false" onAction="#btnDefaultSpeedPressed" prefHeight="35.0" prefWidth="35.0"
+            <Button fx:id="btnDefaultSpeed" translateY="30" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
+                    mnemonicParsing="false" onAction="#btnDefaultSpeedPressed" prefHeight="38.0" prefWidth="38.0"
                     text="V"/>
-            <Button fx:id="btnLowSpeed" translateY="35" maxHeight="35.0" maxWidth="35.0" minHeight="35.0" minWidth="35.0"
-                    mnemonicParsing="false" onAction="#btnLowSpeedPressed" prefHeight="35.0" prefWidth="35.0"
+            <Button fx:id="btnLowSpeed" translateY="35" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
+                    mnemonicParsing="false" onAction="#btnLowSpeedPressed" prefHeight="38.0" prefWidth="38.0"
                     text="V-"/>
-            <Button fx:id="btnVeryLowSpeed" translateY="40" maxHeight="35.0" maxWidth="35.0" minHeight="35.0" minWidth="35.0"
-                    mnemonicParsing="false" onAction="#btnVeryLowSpeedPressed" prefHeight="35.0" prefWidth="35.0"
+            <Button fx:id="btnVeryLowSpeed" translateY="40" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
+                    mnemonicParsing="false" onAction="#btnVeryLowSpeedPressed" prefHeight="38.0" prefWidth="38.0"
                     text="V--"/>
+            <Button fx:id="btnVeryVeryLowSpeed" translateY="45" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
+                    mnemonicParsing="false" onAction="#btnVeryVeryLowSpeedPressed" prefHeight="38.0" prefWidth="38.0"
+                    text="V---"/>
         </VBox>
 
         <Button fx:id="btnConnect" mnemonicParsing="false" onAction="#btnConnectPressed" GridPane.columnIndex="1" prefHeight="48.0"

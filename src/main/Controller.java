@@ -59,6 +59,8 @@ public class Controller extends BaseController {
     @FXML
     private Button btnVeryLowSpeed;
     @FXML
+    private Button btnVeryVeryLowSpeed;
+    @FXML
     private Button btnRight;
     @FXML
     private Button btnLeft;
@@ -909,6 +911,11 @@ public class Controller extends BaseController {
         manualVelocity = veryLowVelocity;
     }
 
+    public void btnVeryVeryLowSpeedPressed()
+    {
+        manualVelocity = veryLowVelocity / 2f;
+    }
+
     public void btnForwardPressed()
     {
         resetMotionButtonsStyle();
@@ -1084,6 +1091,7 @@ public class Controller extends BaseController {
         btnDefaultSpeed.setVisible(isManualMode);
         btnLowSpeed.setVisible(isManualMode);
         btnVeryLowSpeed.setVisible(isManualMode);
+        btnVeryVeryLowSpeed.setVisible(isManualMode);
     }
 
     private void updateUI()
@@ -1579,12 +1587,15 @@ public class Controller extends BaseController {
     //region Automate Methods
     private void requestAutomate()
     {
-        if (operatingMode == OperatingMode.Manual && currentState != States.Manual) {
-            requestState = States.Manual;
+        if (currentState != States.None && currentState != States.Charging) {
+            if (operatingMode == OperatingMode.Manual && currentState != States.Manual) {
+                requestState = States.Manual;
+            }
+            else if (currentState == States.Manual && operatingMode != OperatingMode.Manual) {
+                requestState = States.Initialize;
+            }
         }
-        else if (currentState == States.Manual && operatingMode != OperatingMode.Manual) {
-            requestState = States.Initialize;
-        }
+
         if (requestState != currentState) {
             switch (requestState) {
                 case None:
@@ -1649,7 +1660,7 @@ public class Controller extends BaseController {
 
                 if (getBatteryPercentage() < BATTERY_LOW_THRESHOLD) {
                     double distanceStation = Utils.getEuclidean(STATION_POS_X, STATION_POS_Y, currentX, currentY);
-                    if (distanceStation < 0.01 && (currentRz > 179. || currentRz < -179.)) {
+                    if (distanceStation < 0.05 && (currentRz > 178. || currentRz < -178.)) {
                         requestState = States.Charging;
                         dir = MotionDirections.Stop;
                     }
