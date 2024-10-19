@@ -156,12 +156,15 @@ public class Controller extends BaseController {
     private final String VREP_ROBOT_BASE_SONAR_NAME = "Proximity_sensor";
     //endregion
 
-    //region THRESHOLDS
+    //region THRESHOLDS & BATTERY_TIME
+    private final int    DEFAULT_BATTERY_TIME_MIN = 3;
+    private final int    MAX_BATTERY_TIME = 60 * DEFAULT_BATTERY_TIME_MIN; // Default 20 minutes battery time.
+
     private final double MARKER_THRESHOLD = 0.75;                // 0 < x < 1
     private final double MIN_DISTANCE_ROBOT_TO_STATION = 0.25;  // 0 < x
     private final int    MARKER_CENTER_RANGE = 10;              // 0 < x
     private final double ROTATION_AIM_RANGE = 3.0;              // 0 < x
-    private final float  BATTERY_LOW_THRESHOLD = 20f;           // 0 < x < 100
+    private final float  BATTERY_LOW_THRESHOLD = 50f;           // 0 < x < 100
     private final int    TARGET_BACKUP_THRESHOLD = 50;
     private final int    LEFT_RIGHT_ALTERNATION_THRESHOLD = 6;
     //endregion
@@ -254,9 +257,6 @@ public class Controller extends BaseController {
     //endregion
 
     //region Timers variables declaration
-    private final int DEFAULT_BATTERY_TIME_MIN = 5;
-    private final int MAX_BATTERY_TIME = 60 * DEFAULT_BATTERY_TIME_MIN; // Default 20 minutes battery time.
-
     private Timer motionTimer;
     private Timer batteryTimer;
     //endregion
@@ -1724,7 +1724,13 @@ public class Controller extends BaseController {
             if (dir == MotionDirections.Left) {
                 goToMarkerLeftRightAlternationCounter++;
             }
-            dir = goToMarkerLeftRightAlternationCounter > LEFT_RIGHT_ALTERNATION_THRESHOLD ? MotionDirections.Forward : MotionDirections.Right;
+            if (goToMarkerLeftRightAlternationCounter >= LEFT_RIGHT_ALTERNATION_THRESHOLD) {
+                dir = MotionDirections.Stop;
+                requestState = States.Wander;
+            }
+            else {
+                dir = MotionDirections.Right;
+            }
         }
         else if (target.x() < (resolutionCamera / 2) - MARKER_CENTER_RANGE) {
             // target is on the left
@@ -1732,7 +1738,13 @@ public class Controller extends BaseController {
             if (dir == MotionDirections.Right) {
                 goToMarkerLeftRightAlternationCounter++;
             }
-            dir =  goToMarkerLeftRightAlternationCounter > LEFT_RIGHT_ALTERNATION_THRESHOLD ? MotionDirections.Forward : MotionDirections.Left;
+            if (goToMarkerLeftRightAlternationCounter >= LEFT_RIGHT_ALTERNATION_THRESHOLD) {
+                dir = MotionDirections.Stop;
+                requestState = States.Wander;
+            }
+            else {
+                dir = MotionDirections.Left;
+            }
         }
         else {
             goToMarkerLeftRightAlternationCounter = 0;
