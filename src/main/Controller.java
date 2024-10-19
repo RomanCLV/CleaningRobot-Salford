@@ -53,6 +53,12 @@ public class Controller extends BaseController {
     @FXML
     private Button btnManualMode;
     @FXML
+    private Button btnDefaultSpeed;
+    @FXML
+    private Button btnLowSpeed;
+    @FXML
+    private Button btnVeryLowSpeed;
+    @FXML
     private Button btnRight;
     @FXML
     private Button btnLeft;
@@ -186,6 +192,7 @@ public class Controller extends BaseController {
     private final float lowVelocity = 1f;
     private final float veryLowVelocity = 0.5f;
     private float currentVelocity = defaultVelocity;
+    private float manualVelocity = defaultVelocity;
 
     private boolean hasOrientationAim = false;
     private double orientationAim = 0.;
@@ -887,6 +894,21 @@ public class Controller extends BaseController {
         updateOperatingModeButtons();
     }
 
+    public void btnDefaultSpeedPressed()
+    {
+        manualVelocity = defaultVelocity;
+    }
+
+    public void btnLowSpeedPressed()
+    {
+        manualVelocity = lowVelocity;
+    }
+
+    public void btnVeryLowSpeedPressed()
+    {
+        manualVelocity = veryLowVelocity;
+    }
+
     public void btnForwardPressed()
     {
         resetMotionButtonsStyle();
@@ -1056,9 +1078,12 @@ public class Controller extends BaseController {
 
     private void updateOperatingModeButtons()
     {
-        boolean isAutomaticMode = operatingMode == OperatingMode.Automatic;
-        btnAutomaticMode.setDisable(isAutomaticMode);
-        btnManualMode.setDisable(!isAutomaticMode);
+        boolean isManualMode = operatingMode == OperatingMode.Manual;
+        btnAutomaticMode.setDisable(!isManualMode);
+        btnManualMode.setDisable(isManualMode);
+        btnDefaultSpeed.setVisible(isManualMode);
+        btnLowSpeed.setVisible(isManualMode);
+        btnVeryLowSpeed.setVisible(isManualMode);
     }
 
     private void updateUI()
@@ -1506,7 +1531,7 @@ public class Controller extends BaseController {
     {
         System.out.println("start main");
         while (running) {
-            currentVelocity = defaultVelocity;
+            currentVelocity = currentState == States.Manual ? manualVelocity : defaultVelocity;
             requestAutomate();
             stateAutomate();
             applyMove();
@@ -1618,7 +1643,18 @@ public class Controller extends BaseController {
                 requestState = States.Clean;
                 break;
             case Manual:
-                if (isObstacleDetected() && dir == MotionDirections.Forward) {
+                double currentX = getGpsX();
+                double currentY = getGpsY();
+                double currentRz = getGpsRz();
+
+                if (getBatteryPercentage() < BATTERY_LOW_THRESHOLD) {
+                    double distanceStation = Utils.getEuclidean(STATION_POS_X, STATION_POS_Y, currentX, currentY);
+                    if (distanceStation < 0.01 && (currentRz > 179. || currentRz < -179.)) {
+                        requestState = States.Charging;
+                        dir = MotionDirections.Stop;
+                    }
+                }
+                else if (isObstacleDetected() && dir == MotionDirections.Forward) {
                     dir = MotionDirections.Stop;
                 }
                 break;
@@ -1712,7 +1748,7 @@ public class Controller extends BaseController {
                 batteryChargingValue = Math.min(batteryChargingValue + 0.005, MAX_BATTERY_TIME);
                 setBatteryTime((int)batteryChargingValue);
                 if (batteryChargingValue == MAX_BATTERY_TIME) {
-                    requestState = States.Initialize;
+                    requestState = operatingMode == OperatingMode.Automatic ? States.Initialize : States.Manual;
                     batteryTimer.restart();
                 }
                 break;
