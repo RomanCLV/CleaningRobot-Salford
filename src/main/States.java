@@ -6,5 +6,7 @@ public enum States {
     Clean,
     Avoid,
     Wander,
-    Track
+    Track,
+    StationApproach,
+    Charging
 }

@@ -1,10 +1,10 @@
 package main;
 
 public class PositionSample {
-    private double x;
-    private double y;
-    private double theta;
-    private long time;
+    private final double x;
+    private final double y;
+    private final double theta;
+    private final long time;
 
     public PositionSample(double x, double y, double theta, long time) {
         this.x = x;

@@ -18,8 +18,8 @@ public class Timer
     private volatile int counter = 0;
     private volatile boolean timerFlag   = true;
     private volatile boolean restartFlag = true;
-    private java.util.Timer timer = new java.util.Timer();
-    private TimerTask task;
+    private final java.util.Timer timer = new java.util.Timer();
+    private final TimerTask task;
 
    /**
     * Method     : Timer::Timer()
@@ -159,4 +159,8 @@ public class Timer
     public synchronized int getMs()  { return(counter);        }
     public synchronized int getSec() { return(getMs() / 1000); }
     public synchronized int getMin() { return(getSec() / 60);  }
+
+    public synchronized int getTime() {
+        return time;
+    }
 }

@@ -205,7 +205,7 @@
                GridPane.valignment="CENTER"/>
         <Label fx:id="lblGpsY" layoutX="292.0" layoutY="388.0" text="Y:" translateX="20.0" GridPane.columnIndex="1"
                GridPane.halignment="LEFT" GridPane.rowIndex="2" GridPane.valignment="CENTER"/>
-        <Label fx:id="lblGpsZ" layoutX="292.0" layoutY="388.0" text="Z:" translateX="20.0" translateY="30.0"
+        <Label fx:id="lblGpsTheta" layoutX="292.0" layoutY="388.0" text="θ:" translateX="20.0" translateY="30.0"
                GridPane.columnIndex="1" GridPane.halignment="LEFT" GridPane.rowIndex="2"
                GridPane.valignment="CENTER"/>
 

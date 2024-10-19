@@ -27,6 +27,7 @@ import java.awt.image.DataBufferByte;
 import java.awt.image.DataBufferInt;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.googlecode.javacv.cpp.opencv_core.*;
 import static com.googlecode.javacv.cpp.opencv_highgui.cvLoadImage;
@@ -112,7 +113,7 @@ public class Controller extends BaseController {
     @FXML
     private Label lblGpsY;
     @FXML
-    private Label lblGpsZ;
+    private Label lblGpsTheta;
     @FXML
     private Label lblRightWheel;
     @FXML
@@ -132,11 +133,42 @@ public class Controller extends BaseController {
     private Stage positionChartsStage;
     //endregion
 
+    //region V-rep communication and simulation variables declaration
+    private remoteApi vRep;
+    private int clientID = -1;
+
+    private final int    VREP_SENS_AXIS_X = -1;     // To reverse the x-axis (-1) or not (1) in VREP simulation
+    private final int    VREP_SENS_AXIS_Y = -1;     // To reverse the y-axis (-1) or not (1) in VREP simulation
+    private final double VREP_START_POS_X =  2.130; // The robot start x pos in the VREP simulation
+    private final double VREP_START_POS_Y = -0.775; // The robot start y pos in the VREP simulation
+    private final double VREP_START_POS_RZ = 90;
+
+    private final double STATION_POS_X = 0.; // The charger X coordinate. Ori : 1.78
+    private final double STATION_POS_Y = 0.; // The charger Y coordinate. Ori : -0.78
+
+    private final String VREP_IPV4 = "127.0.0.1";
+    private final int    VREP_PORT = 20001;
+
+    private final String VREP_ROBOT_NAME = "Roomba";
+    private final String VREP_ROBOT_LEFT_WHEEL_NAME = "JointLeftWheel";
+    private final String VREP_ROBOT_RIGHT_WHEEL_NAME = "JointRightWheel";
+    private final String VREP_ROBOT_VISION_SENSOR_NAME = "Vision_sensor";
+    private final String VREP_ROBOT_BASE_SONAR_NAME = "Proximity_sensor";
+    //endregion
+
+    //region THRESHOLDS
+    private final double MARKER_THRESHOLD = 0.75;                // 0 < x < 1
+    private final double MIN_DISTANCE_ROBOT_TO_STATION = 0.25;  // 0 < x
+    private final int    MARKER_CENTER_RANGE = 10;              // 0 < x
+    private final double ROTATION_AIM_RANGE = 3.0;              // 0 < x
+    private final float  BATTERY_LOW_THRESHOLD = 20f;           // 0 < x < 100
+    private final int    TARGET_BACKUP_THRESHOLD = 50;
+    private final int    LEFT_RIGHT_ALTERNATION_THRESHOLD = 6;
+    //endregion
+
     //region Sensors variables declaration
     private final int SONARS_NUMBER = 6;
     private final int WHEEL_NUMBER = 2; // LEFT-RIGHT
-    private final int GPS_NUMBER = 6; // X, Y, Z, Rx, Ry et Rz
-    private double[] gpsValues = new double[GPS_NUMBER];
     private double[] sonarValues = new double[SONARS_NUMBER];
     private final double[] encoderValues = new double[WHEEL_NUMBER];
 
@@ -167,33 +199,40 @@ public class Controller extends BaseController {
     private volatile boolean running = false;
 
     private MotionDirections dir = MotionDirections.Stop; // Direction.
-    private final float vel = 3f;
-    private final float lowVel = 1f;
+    private volatile double gpsX;
+    private volatile double gpsY;
+    private volatile double gpsRz;
+    private final float defaultVelocity = 3f;
+    private final float lowVelocity = 1f;
+    private final float veryLowVelocity = 0.5f;
+    private float currentVelocity = defaultVelocity;
 
     private boolean hasOrientationAim = false;
     private double orientationAim = 0.;
-    private boolean isSearching = false;
+    private boolean isSearchingMarker = false;
     private double searchingMaxAngle;
     private double searchingMinAngle;
+    private MotionDirections searchingDir = MotionDirections.Stop;
+    private int goToMarkerLeftRightAlternationCounter = 0;
 
     private boolean hasForwardTimestamp = false;
     private long forwardTimestamp;
+
+    private double batteryChargingValue = 0.;
     //endregion
 
     //region Camera variables declaration
     private CvPointDoublePair matchLocation;
     private final CvPoint target = new CvPoint();
 
-    private int imageRectangleCounter = 0;
+    private final AtomicInteger matchLocationTargetBackupCounter = new AtomicInteger(TARGET_BACKUP_THRESHOLD);
 
-    private double targetMinScore = 0.0;
-    private double targetMaxScore = 0.0;
+    private int imageRectangleCounter = 0;
 
     private final int resolutionCamera = 256;
     private final IntWA resolution = new IntWA(1);
     private final CharWA image = new CharWA(resolutionCamera * resolutionCamera * 3);
     private BufferedImage bufferedImageRGB;
-    private BufferedImage bufferedImageRGBRectangle;
     private volatile boolean isComputingTheImage = false;
     private volatile boolean isWritingTheImage = false;
 
@@ -214,34 +253,9 @@ public class Controller extends BaseController {
     private FloatW robotLeftJointPosition = new FloatW(3);
     //endregion
 
-    //region V-rep communication and simulation variables declaration
-    private remoteApi vRep;
-    private int clientID = -1;
-
-    private final int    VREP_SENS_AXIS_X = -1;     // To reverse the x axis (-1) or not (1) in VREP simulation
-    private final int    VREP_SENS_AXIS_Y = -1;     // To reverse the y axis (-1) or not (1) in VREP simulation
-    private final double VREP_START_POS_X = +2.130; // The robot start x pos in the VREP simulation
-    private final double VREP_START_POS_Y = -0.775; // The robot start y pos in the VREP simulation
-
-    private final double CHARGER_XCOORD = 0.; // The charger X coordinate. Ori : 1.78
-    private final double CHARGER_YCOORD = 0.; // The charger Y coordinate. Ori : -0.78
-    private final double MAX_GPS_DIST = 5.0;  // The max Euclidean distance from the charger.
-
-    private final String VREP_IPV4 = "127.0.0.1";
-    private final int VREP_PORT = 20001;
-
-    private final String VREP_ROBOT_NAME = "Roomba";
-    private final String VREP_ROBOT_LEFT_WHEEL_NAME = "JointLeftWheel";
-    private final String VREP_ROBOT_RIGHT_WHEEL_NAME = "JointRightWheel";
-    private final String VREP_ROBOT_VISION_SENSOR_NAME = "Vision_sensor";
-    private final String VREP_ROBOT_BASE_SONAR_NAME = "Proximity_sensor";
-
-    private final float MARKER_THRESHOLD = 0.7f;
-    //endregion
-
     //region Timers variables declaration
-    private int MAX_BATT_TIME = 60 * 20; // Default 20 mins battery time.
-    private final int MAX_BATT_VOLT = 12;      // volts.
+    private final int DEFAULT_BATTERY_TIME_MIN = 5;
+    private final int MAX_BATTERY_TIME = 60 * DEFAULT_BATTERY_TIME_MIN; // Default 20 minutes battery time.
 
     private Timer motionTimer;
     private Timer batteryTimer;
@@ -258,6 +272,8 @@ public class Controller extends BaseController {
     private States requestState = States.Initialize;
 
     private boolean wasTracking = false;
+    private boolean isEnoughCloseToStation = false;
+    private ApproachToStationSteps approachStationStep = ApproachToStationSteps.None;
     //endregion
 
     private static class CvPointDoublePair
@@ -291,39 +307,31 @@ public class Controller extends BaseController {
 
     //region Battery methods
     private int getBatteryTime() {
-        return (batteryTimer.getSec());
+        return batteryTimer.getSec();
     }
 
-    private void setBatteryTime(int min) {
-        MAX_BATT_TIME = 60 * min;
-        motionTimer.setSec(MAX_BATT_TIME);
-        motionTimer.restart();
+    private void setBatteryTime(int sec) {
+        if (sec > MAX_BATTERY_TIME) {
+            sec = MAX_BATTERY_TIME;
+        }
+        batteryTimer.setSec(sec);
+        batteryTimer.restart();
     }
 
-    private double getBatteryCapacity() {
-        double v = (double) MAX_BATT_VOLT - Utils.map(batteryTimer.getSec(), 0, (double) MAX_BATT_TIME, 0, (double) MAX_BATT_VOLT);
-        return (Math.max(v, 0.0));
+    private void setBatteryTimeMin(int min) {
+        setBatteryTime(60 * min);
     }
 
     private double getBatteryPercentage() {
-//        double v = getBatteryCapacity();
-//        if ((v >= 9.6) && (v <= 12)) return (100.0);
-//        else if ((v >= 7.2) && (v < 9.6)) return (80.0);
-//        else if ((v >= 4.8) && (v < 7.2)) return (60.0);
-//        else if ((v >= 2.4) && (v < 4.8)) return (40.0);
-//        else if ((v > 1.0) && (v < 2.4)) return (20.0);
-//        else
-//            return (0.0);
-        return getBatteryCapacity() * 100. / MAX_BATT_VOLT;
+        return 100. * (double)(MAX_BATTERY_TIME - getBatteryTime()) / (double) MAX_BATTERY_TIME;
     }
 
-    private boolean getBatteryState() {
-        double v = getBatteryCapacity();
-        return (v > 0.0);
+    private boolean isBatteryLow() {
+        return getBatteryPercentage() <= BATTERY_LOW_THRESHOLD;
     }
 
-    private boolean isBatteryLow(){
-        return getBatteryPercentage() <= 50.0;
+    private double getBatteryChargingPercentage() {
+        return 100. * batteryChargingValue / MAX_BATTERY_TIME;
     }
 
     //endregion
@@ -375,56 +383,36 @@ public class Controller extends BaseController {
     //endregion
 
     //region GPS methods
-    private double[] readGPS() {
+    private void readGPS() {
         FloatWA position = new FloatWA(3);
         FloatWA orientation = new FloatWA(3);
-        int result = vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
-        vRep.simxGetObjectOrientation(clientID, gpsHandle.getValue(), -1, orientation, remoteApi.simx_opmode_streaming);
-        runningStateGPSIsOK = result != remoteApi.simx_return_remote_error_flag;
+        int result1 = vRep.simxGetObjectPosition(clientID, gpsHandle.getValue(), -1, position, remoteApi.simx_opmode_streaming);
+        int result2 = vRep.simxGetObjectOrientation(clientID, gpsHandle.getValue(), -1, orientation, remoteApi.simx_opmode_streaming);
+        runningStateGPSIsOK =
+                result1 != remoteApi.simx_return_remote_error_flag &&
+                result2 != remoteApi.simx_return_remote_error_flag;
 
-        double[] positions = new double[GPS_NUMBER];
-        positions[0] = (VREP_SENS_AXIS_X * (double) position.getArray()[0] + VREP_START_POS_X);
-        positions[1] = (VREP_SENS_AXIS_Y * (double) position.getArray()[1] + VREP_START_POS_Y);
-        positions[2] = position.getArray()[2];
-        positions[3] = (orientation.getArray()[0]*180.)/Math.PI;
-        positions[4] = (orientation.getArray()[1]*180.)/Math.PI;
-        positions[5] = (orientation.getArray()[2]*180.)/Math.PI;
-
-        return (positions);
+        gpsX = VREP_SENS_AXIS_X * (double) position.getArray()[0] + VREP_START_POS_X;
+        gpsY = VREP_SENS_AXIS_Y * (double) position.getArray()[1] + VREP_START_POS_Y;
+        gpsRz = clapAngle(((double) orientation.getArray()[2] * 180.) / Math.PI + VREP_START_POS_RZ);
     }
 
-    private double getGPSX() {
-        return (gpsValues[0]);
+    private double getGpsX() {
+        return gpsX;
     }
 
-    private double getGPSY() {
-        return (gpsValues[1]);
+    private double getGpsY() {
+        return gpsY;
     }
 
-    private double getGPSZ() {
-        return (gpsValues[2]);
-    }
-
-    private double getGPSRx() {
-        return (gpsValues[3]);
-    }
-
-    private double getGPSRy() {
-        return (gpsValues[4]);
-    }
-
-    private double getGPSRz() {
-        return (gpsValues[5]);
-    }
-
-
-    private int getGPSNo() {
-        return GPS_NUMBER;
+    private double getGpsRz() {
+        return gpsRz;
     }
     //endregion
 
     //region Ultrasonic methods
-    private double readSonarRange(int sensor) {
+    private double readSonarRange(int sensor)
+    {
         BoolW detectionState = new BoolW(false);
         FloatWA detectedPoint = new FloatWA(1); //Coordinates relatives to the sensor's frame
         IntW detectedObjectHandle = new IntW(1);
@@ -445,7 +433,8 @@ public class Controller extends BaseController {
         return detectionState.getValue() ? distance : 1.;
     }
 
-    private double[] readSonars() {
+    private double[] readSonars()
+    {
         for (int i = 0; i < getSonarNo(); i++)
         {
             if (sonarsHandles[i].getValue() != remoteApi.simx_return_remote_error_flag)
@@ -456,29 +445,34 @@ public class Controller extends BaseController {
         return sonarValues;
     }
 
-    private double[] getSonarRanges() {
+    private double[] getSonarRanges()
+    {
         return (sonarValues);
     }
 
-    private double getSonarRange(int sensor) {
+    private double getSonarRange(int sensor)
+    {
         return (sonarValues[sensor]);
     }
 
-    private int getSonarNo() {
+    private int getSonarNo()
+    {
         return SONARS_NUMBER;
     }
 
-    private boolean isObstacleDetected(){
+    private boolean isObstacleDetected()
+    {
         return sonarValues[2] <= 0.1 || sonarValues[3] <= 0.1;
     }
 
-    private int whereObstacleDetected(int startIndex, int endIndex) {
+    private int whereObstacleDetected(int startIndex, int endIndex)
+    {
         int i;
         double minDistance = 9999999;
         int minIndex = -1;
         for (i = startIndex; i <= endIndex;i++) {
 
-            if(minDistance > sonarValues[i]){
+            if (minDistance > sonarValues[i]) {
                 minDistance = sonarValues[i];
                 minIndex = i;
             }
@@ -528,7 +522,7 @@ public class Controller extends BaseController {
             }
         }
 
-        return grayImage;  // Retourner l'image en niveaux de gris
+        return grayImage;
     }
 
     private int getGrayscale(BufferedImage img, int x, int y) {
@@ -537,22 +531,6 @@ public class Controller extends BaseController {
         int g = (int) (c.getGreen() * 0.587);
         int b = (int) (c.getBlue() * 0.114);
         return r + g + b;
-    }
-
-    private int getTargetX() {
-        return (target.x());
-    }
-
-    private int getTargetY() {
-        return (target.y());
-    }
-
-    private double getTargetMinScore() {
-        return (targetMinScore);
-    }
-
-    private double getTargetMaxScore() {
-        return (targetMaxScore);
     }
 
     private void displayBufferedImage(BufferedImage bufferedImage) {
@@ -570,59 +548,31 @@ public class Controller extends BaseController {
         }
     }
 
-    private CvPoint findMarkerOLD(IplImage src) {
-        IplImage result = cvCreateImage(
-                cvSize(src.width() - markerImage.width() + 1, src.height() - markerImage.height() + 1),
-                IPL_DEPTH_32F,
-                1);
-
-        if (src.width() < markerImage.width() || src.height() < markerImage.height()) {
-            System.out.println("Invalid dimensions.");
-            return null;
-        }
-
-        cvMatchTemplate(src, markerImage, result, CV_TM_CCOEFF_NORMED);
-
-        double[] minVal = new double[1];
-        double[] maxVal = new double[1];
-        CvPoint minLoc = new CvPoint();
-        CvPoint maxLoc = new CvPoint();
-        cvMinMaxLoc(result, minVal, maxVal, minLoc, maxLoc, null);
-
-        if (maxVal[0] > MARKER_THRESHOLD) {
-            target.x(maxLoc.x() + markerImage.width() / 2);
-            target.y(maxLoc.y() + markerImage.height() / 2);
-            return maxLoc;
-        }
-        return null;
-    }
-
     private CvPointDoublePair findMarkerRT(IplImage src) {
 
-        // Boucle sur différents ratios de redimensionnement pour détecter le marqueur à différentes échelles
         for (double scaleFactor = 0.15; scaleFactor <= 2.5; scaleFactor += 0.05) {
-            // Redimensionner le modèle (markerImage) à l'échelle actuelle
+            // create the resized Marker image
             IplImage resizedMarker = cvCreateImage(
                     cvSize((int) (markerImage.width() * scaleFactor), (int) (markerImage.height() * scaleFactor)),
                     markerImage.depth(),
                     markerImage.nChannels()
             );
-            cvResize(markerImage, resizedMarker);  // Redimensionnement du modèle
-            // Vérifier si l'image source est assez grande pour contenir le modèle redimensionné
+            cvResize(markerImage, resizedMarker);  // resize the marker
+
+            // check dimensions
             if (src.width() < resizedMarker.width() || src.height() < resizedMarker.height()) {
-                continue;  // Passer à l'échelle suivante si l'image source est trop petite
+                break;
             }
 
-            // Création de l'image résultat pour stocker les scores de correspondance
+            // create result image
             IplImage result = cvCreateImage(
                     cvSize(src.width() - resizedMarker.width() + 1, src.height() - resizedMarker.height() + 1),
                     IPL_DEPTH_32F, 1
             );
 
-            // Effectuer la correspondance de modèles à l'échelle actuelle
             cvMatchTemplate(src, resizedMarker, result, CV_TM_CCOEFF_NORMED);
 
-            // Trouver les valeurs min/max et les emplacements de correspondance
+            // min/max locations
             double[] minVal = new double[1];
             double[] maxVal = new double[1];
             CvPoint minLoc = new CvPoint();
@@ -631,16 +581,16 @@ public class Controller extends BaseController {
 
             int width = resizedMarker.width();
             int height = resizedMarker.height();
-            // Libérer les ressources liées à l'image redimensionnée et au résultat
+
+            // free memory
             cvReleaseImage(resizedMarker);
             cvReleaseImage(result);
 
-            // Si la correspondance est au-dessus du seuil défini
             if (maxVal[0] > MARKER_THRESHOLD) {
-                // Calcul des coordonnées du centre du marqueur
+                // target takes the center of the location
                 target.x(maxLoc.x() + width / 2);
                 target.y(maxLoc.y() + height / 2);
-                return new CvPointDoublePair(maxLoc, scaleFactor);  // Marqueur trouvé à cette échelle
+                return new CvPointDoublePair(maxLoc, scaleFactor); // return the loc and the scale factor
             }
         }
         return null;
@@ -649,43 +599,42 @@ public class Controller extends BaseController {
     private CvPointDoublePair findMarkerNext(IplImage src)
     {
         IplImageIntPair pair;
-        for (int i = 0; i < resizedMarkers.length; i++) {
-            // Redimensionner le modèle (markerImage) à l'échelle actuelle
-            pair  = resizedMarkers[i];
-            IplImage resizedMarker = pair.image;
+        for (IplImageIntPair marker : resizedMarkers) {
 
-            // Vérifier si l'image source est assez grande pour contenir le modèle redimensionné
+            pair = marker;
+            IplImage resizedMarker = pair.image; // select the resized marker
+
+            // check dimensions
             if (src.width() < resizedMarker.width() || src.height() < resizedMarker.height()) {
-                continue;  // Passer à l'échelle suivante si l'image source est trop petite
+                break;
             }
 
-            // Création de l'image résultat pour stocker les scores de correspondance
+            // create result image
             IplImage result = cvCreateImage(
                     cvSize(src.width() - resizedMarker.width() + 1, src.height() - resizedMarker.height() + 1),
                     IPL_DEPTH_32F, 1
             );
 
-            // Effectuer la correspondance de modèles à l'échelle actuelle
             cvMatchTemplate(src, resizedMarker, result, CV_TM_CCOEFF_NORMED);
 
-            // Trouver les valeurs min/max et les emplacements de correspondance
+            // min/max locations
             double[] minVal = new double[1];
             double[] maxVal = new double[1];
             CvPoint minLoc = new CvPoint();
             CvPoint maxLoc = new CvPoint();
             cvMinMaxLoc(result, minVal, maxVal, minLoc, maxLoc, null);
+
+            // free memory
             cvReleaseImage(result);
 
-            // Si la correspondance est au-dessus du seuil défini
             if (maxVal[0] > MARKER_THRESHOLD) {
-                // Calcul des coordonnées du centre du marqueur
+                // target takes the center of the location
                 target.x(maxLoc.x() + resizedMarker.width() / 2);
                 target.y(maxLoc.y() + resizedMarker.height() / 2);
-                return new CvPointDoublePair(maxLoc, pair.scaleFactor / 100.);  // Marqueur trouvé à cette échelle
+                return new CvPointDoublePair(maxLoc, pair.scaleFactor / 100.); // return the loc and the scale factor
             }
         }
 
-        // Aucune correspondance trouvée pour  les échelles testées
         return null;
     }
 
@@ -706,7 +655,7 @@ public class Controller extends BaseController {
 
         ByteBuffer buffer = iplImage.getByteBuffer();
         if (buffer.capacity() < width * height * channels) {
-            System.out.println("Buffer capacity is not sufficient for the image.");
+            System.err.println("Buffer capacity is not sufficient for the image.");
             return null;
         }
 
@@ -729,7 +678,7 @@ public class Controller extends BaseController {
             buffer.put(data);
         }
         else {
-            System.out.println("Unsupported BufferedImage type: " + bufferedImage.getType());
+            System.err.println("Unsupported BufferedImage type: " + bufferedImage.getType());
             return null;
         }
 
@@ -768,58 +717,8 @@ public class Controller extends BaseController {
         setVel(vel, vel);
     }
 
-    private void move(float vel, int time) {
-        motionTimer.setMs(time);
-        motionTimer.restart();
-        while (motionTimer.getState()) {
-            move(vel);
-        }
-        btnStopPressed();
-    }
-
     private void turnSpot(float vel) {
         setVel(vel, -vel);
-    }
-
-    private void turnSpot(float vel, int time) {
-        motionTimer.setMs(time);
-        motionTimer.restart();
-        while (motionTimer.getState()) {
-            turnSpot(vel);
-        }
-        btnStopPressed();
-    }
-
-    private void turnSharp(float vel) {
-        if (vel > 0) setVel(vel, 0);
-        else setVel(0, -vel);
-    }
-
-    private void turnSharp(float vel, int time) {
-        motionTimer.setMs(time);
-        motionTimer.restart();
-        while (motionTimer.getState()) {
-            turnSharp(vel);
-        }
-        btnStopPressed();
-    }
-
-    private void turnSmooth(float vel) {
-        if (vel > 0) setVel(vel, vel / 2);
-        else setVel(-vel / 2, -vel);
-    }
-
-    private void turnSmooth(float vel, int time) {
-        motionTimer.setMs(time);
-        motionTimer.restart();
-        while (motionTimer.getState()) {
-            turnSmooth(vel);
-        }
-        btnStopPressed();
-    }
-
-    private double generateRotationAim() {
-        return clapAngle(getGPSRz() + -180 + (360 * Rand.getDouble()));
     }
 
     private void applyMove() {
@@ -832,19 +731,48 @@ public class Controller extends BaseController {
                 move(0);
                 break;
             case Forward:
-                move(+vel);
+                move(+currentVelocity);
                 break;
             case Backward:
-                move(-vel);
+                move(-currentVelocity);
                 break;
             case Right:
-                turnSpot(+((isBatteryLow() ? lowVel : vel) / 2f));
+                turnSpot(currentVelocity / 2f);
                 break;
             case Left:
-                turnSpot(-((isBatteryLow() ? lowVel : vel) / 2f));
+                turnSpot(-currentVelocity / 2f);
                 break;
         }
     }
+
+    private boolean rotateToAim() {
+        double orientation = getGpsRz();
+        double deltaOrientation = clapAngle(orientationAim - orientation);
+        boolean result = false;
+
+        if (deltaOrientation > ROTATION_AIM_RANGE) {
+            dir = MotionDirections.Left;
+        }
+        else if (deltaOrientation < -ROTATION_AIM_RANGE) {
+            dir = MotionDirections.Right;
+        }
+        else {
+            result = true;
+        }
+
+        return result;
+    }
+
+    private boolean moveToForwardTimestamp()
+    {
+        boolean result = System.currentTimeMillis() >= forwardTimestamp;
+        if (!result)
+        {
+            dir = MotionDirections.Forward;
+        }
+        return result;
+    }
+
     //endregion
 
     //region UI methods
@@ -871,7 +799,7 @@ public class Controller extends BaseController {
             // create a new task for to connection to not block the UI
             Task<Boolean> task = new Task<Boolean>() {
                 @Override
-                protected Boolean call() throws Exception {
+                protected Boolean call() {
                     return connectToVrep();
                 }
 
@@ -923,19 +851,19 @@ public class Controller extends BaseController {
         // creation of a task to disconnect properly and not block the UI
         Task<Void> task = new Task<Void>() {
             @Override
-            protected Void call() throws Exception {
+            protected Void call() {
                 kill();
                 return null;
             }
 
             @Override
             protected void succeeded() {
-                resetUIGeneral();
+                resetUI();
             }
 
             @Override
             protected void failed() {
-                resetUIGeneral();
+                resetUI();
             }
         };
 
@@ -943,31 +871,36 @@ public class Controller extends BaseController {
         new Thread(task).start();
     }
 
-    public void btnForwardPressed() {
+    public void btnForwardPressed()
+    {
         resetMotionButtonsStyle();
         btnForward.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Forward;
     }
 
-    public void btnBackwardPressed() {
+    public void btnBackwardPressed()
+    {
         resetMotionButtonsStyle();
         btnBack.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Backward;
     }
 
-    public void btnLeftPressed() {
+    public void btnLeftPressed()
+    {
         resetMotionButtonsStyle();
         btnLeft.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Left;
     }
 
-    public void btnRightPressed() {
+    public void btnRightPressed()
+    {
         resetMotionButtonsStyle();
         btnRight.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Right;
     }
 
-    public void btnStopPressed() {
+    public void btnStopPressed()
+    {
         resetMotionButtonsStyle();
         btnStop.setStyle("-fx-background-color: #7FFF00; ");
         dir = MotionDirections.Stop;
@@ -984,7 +917,7 @@ public class Controller extends BaseController {
 
         lblGpsX.setText("X:");
         lblGpsY.setText("Y:");
-        lblGpsZ.setText("Z:");
+        lblGpsTheta.setText("θ:");
 
         lblRightWheel.setText(" Right:");
         lblLeftWheel.setText(" Left:");
@@ -1013,13 +946,14 @@ public class Controller extends BaseController {
         batteryLed5.setFill(GRAY_LED);
     }
 
-    private void resetUIGeneral()
+    private void resetUI()
     {
         btnConnect.setDisable(false);
         btnConnect.setText("Connect");
         btnConnect.setStyle(defaultButtonStyle);
         resetUILabels();
         resetUILeds();
+        resetMotionButtonsStyle();
         setDisableAllMotionButtons(true);
     }
 
@@ -1048,7 +982,7 @@ public class Controller extends BaseController {
 
     private void updateBattery()
     {
-        int battery = (int)Math.round(getBatteryPercentage());
+        int battery = (int)(currentState == States.Charging ? getBatteryChargingPercentage() : getBatteryPercentage());
         lblBattery.setText(battery + " %");
         batteryLed1.setFill((battery >= 0) ? GREEN_LED : GRAY_LED);
         batteryLed2.setFill((battery >= 20) ? GREEN_LED : GRAY_LED);
@@ -1103,6 +1037,96 @@ public class Controller extends BaseController {
             positionChartsStage.requestFocus();
         }
     }
+
+    private void updateUI()
+    {
+        if (running)
+        {
+            lblState.setText(currentState.name());
+            updateBattery();
+            updateLeds();
+
+            if (runGPS) {
+                lblGpsX.setText("X: " + Math.round(getGpsX() * 100.) / 100.);
+                lblGpsY.setText("Y: " + Math.round(getGpsY() * 100.) / 100.);
+                lblGpsTheta.setText("θ: " + Math.round(getGpsRz() * 100.) / 100.);
+            }
+
+            if (runAtLeastOneSonar) {
+                lblSensor0.setText(" " + sonarValues[0] + "m");
+                lblSensor1.setText(" " + sonarValues[1] + "m");
+                lblSensor2.setText(" " + sonarValues[2] + "m");
+                lblSensor3.setText(" " + sonarValues[3] + "m");
+                lblSensor4.setText(" " + sonarValues[4] + "m");
+                lblSensor5.setText(" " + sonarValues[5] + "m");
+                lblSensor5.setText(" " + sonarValues[5] + "m");
+            }
+
+            if (runWheelEncoder) {
+                lblRightWheel.setText(" Right: " + encoderValues[0]);
+                lblLeftWheel.setText(" Left: " + encoderValues[1]);
+            }
+        }
+    }
+
+    private void updateCameraCanvas()
+    {
+        while (isWritingTheImage);
+        isComputingTheImage = true;
+        if (imageRectangleCounter < 3 && matchLocation != null)
+        {
+            IplImage clone = bufferedImageToIplImage(bufferedImageRGB);
+            if (clone == null)
+            {
+                displayBufferedImage(bufferedImageRGB);
+            }
+            else
+            {
+                drawRectangle(clone, matchLocation);
+                displayBufferedImage(iplImageToBufferedImage(clone));
+            }
+        }
+        else
+        {
+            displayBufferedImage(bufferedImageRGB);
+        }
+        imageRectangleCounter++;
+        isComputingTheImage = false;
+    }
+
+    private void updateCameraCanvasWithFindingMarker()
+    {
+        while (isWritingTheImage);
+        isComputingTheImage = true;
+
+        IplImage rgbSrc = bufferedImageToIplImage(bufferedImageRGB);
+        IplImage graySrc = bufferedImageToIplImage(bufferedImageToGray(bufferedImageRGB));
+
+        if (rgbSrc != null && graySrc != null)
+        {
+            matchLocation = findMarkerRT(graySrc);
+            //matchLocation = findMarkerNext(graySrc);
+
+            if (matchLocation == null)
+            {
+                displayBufferedImage(bufferedImageRGB);
+                matchLocationTargetBackupCounter.incrementAndGet();
+            }
+            else
+            {
+                imageRectangleCounter = 0;
+                matchLocationTargetBackupCounter.set(0);
+
+                drawRectangle(rgbSrc, matchLocation);
+                displayBufferedImage(iplImageToBufferedImage(rgbSrc));
+            }
+        }
+        else
+        {
+            displayBufferedImage(bufferedImageRGB);
+        }
+        isComputingTheImage = false;
+    }
     //endregion
 
     //region Generic Methods
@@ -1152,13 +1176,13 @@ public class Controller extends BaseController {
 
         for (int i = 0; i < count; i++) {
             scaleFactor = scaleFactorInt / 100.;
-            // Redimensionner le modèle (markerImage) à l'échelle actuelle
+            // create resized image
             IplImage resizedMarker = cvCreateImage(
                     cvSize((int) (width * scaleFactor), (int) (height * scaleFactor)),
                     depth,
                     nChannels
             );
-            cvResize(markerImage, resizedMarker);  // Redimensionnement du modèle
+            cvResize(markerImage, resizedMarker);  // resize marker
             resizedMarkers[i] = new IplImageIntPair(resizedMarker, scaleFactorInt);
             scaleFactorInt += 5;
         }
@@ -1212,21 +1236,22 @@ public class Controller extends BaseController {
     private void killThreads()
     {
         running = false;
-        while ((updateSensorThread != null && updateSensorThread.isAlive()) ||
-                (updateUIThread != null && updateUIThread.isAlive()) ||
-                (mainThread != null && (mainThread.isAlive() && !isPowerEmpty)));
+        while (updateSensorThread != null && updateSensorThread.isAlive());
+        updateSensorThread = null;
+
+        while (updateUIThread != null && updateUIThread.isAlive());
+        updateUIThread = null;
+
+        while (mainThread != null && (mainThread.isAlive() && !isPowerEmpty));
+        mainThread = null;
 
         System.out.println("All threads stopped");
-        updateUIThread = null;
-        updateSensorThread = null;
-        mainThread = null;
     }
 
     private void disconnectToVrep()
     {
         if (clientID != -1)
         {
-            //vRep.simxStopSimulation(clientID, remoteApi.simx_opmode_blocking);
             vRep.simxFinish(clientID);
             clientID = -1;
         }
@@ -1246,8 +1271,6 @@ public class Controller extends BaseController {
 
             initTimers(true);
 
-            isPowerEmpty = false;
-            setBatteryTime(2); // set battery for 20 minutes
             initThreads(true);
         }
     }
@@ -1372,7 +1395,8 @@ public class Controller extends BaseController {
         if (batteryTimer == null)
         {
             batteryTimer = new Timer();
-            batteryTimer.setSec(MAX_BATT_TIME);
+            setBatteryTimeMin(DEFAULT_BATTERY_TIME_MIN); // set battery for 2 minutes
+            isPowerEmpty = false;
             if (start) batteryTimer.start();
         }
     }
@@ -1397,108 +1421,21 @@ public class Controller extends BaseController {
     }
     //endregion
 
-    //region threads
+    //region Threads methods
     private void updateUIThreadRunnable()
     {
         System.out.println("start update UI");
         while (running) {
-            Platform.runLater(new Runnable() {
-                @Override
-                public void run() {
-                    if (running)
-                    {
-                        lblState.setText(currentState.name());
-                        updateBattery();
-                        updateLeds();
-
-                        if (runGPS) {
-                            lblGpsX.setText("X: " + Math.round(gpsValues[0] * 100.) / 100.);
-                            lblGpsY.setText("Y: " + Math.round(gpsValues[1] * 100.) / 100.);
-                            lblGpsZ.setText("Z: " + Math.round(gpsValues[2] * 100.) / 100.);
-                        }
-
-                        if (runAtLeastOneSonar) {
-                            lblSensor0.setText(" " + sonarValues[0] + "m");
-                            lblSensor1.setText(" " + sonarValues[1] + "m");
-                            lblSensor2.setText(" " + sonarValues[2] + "m");
-                            lblSensor3.setText(" " + sonarValues[3] + "m");
-                            lblSensor4.setText(" " + sonarValues[4] + "m");
-                            lblSensor5.setText(" " + sonarValues[5] + "m");
-                            lblSensor5.setText(" " + sonarValues[5] + "m");
-                        }
-
-                        if (runWheelEncoder) {
-                            lblRightWheel.setText(" Right: " + encoderValues[0]);
-                            lblLeftWheel.setText(" Left: " + encoderValues[1]);
-                        }
-                    }
-                }
-            });
-
+            Platform.runLater(this::updateUI);
             if (bufferedImageRGB != null)
             {
                 if (currentState != States.Track || isComputingTheImage)
                 {
-                    Platform.runLater(new Runnable() {
-                        @Override
-                        public void run() {
-                            while (isWritingTheImage);
-                            isComputingTheImage = true;
-                            if (imageRectangleCounter < 3 && matchLocation != null)
-                            {
-                                IplImage clone = bufferedImageToIplImage(bufferedImageRGB);
-                                if (clone == null)
-                                {
-                                    displayBufferedImage(bufferedImageRGB);
-                                }
-                                else
-                                {
-                                    drawRectangle(clone, matchLocation);
-                                    displayBufferedImage(iplImageToBufferedImage(clone));
-                                }
-                            }
-                            else
-                            {
-                                displayBufferedImage(bufferedImageRGB);
-                            }
-                            imageRectangleCounter++;
-                            isComputingTheImage = false;
-                        }
-                    });
+                    Platform.runLater(this::updateCameraCanvas);
                 }
                 else
                 {
-                    Platform.runLater(new Runnable() {
-                        @Override
-                        public void run() {
-                            while (isWritingTheImage);
-                            isComputingTheImage = true;
-
-                            IplImage rgbSrc = bufferedImageToIplImage(bufferedImageRGB);
-                            IplImage graySrc = bufferedImageToIplImage(bufferedImageToGray(bufferedImageRGB));
-
-                            if (rgbSrc != null && graySrc != null)
-                            {
-                                matchLocation = findMarkerRT(graySrc);
-                                //matchLocation = findMarkerNext(graySrc);
-
-                                if (matchLocation != null) {
-                                    imageRectangleCounter = 0;
-                                    drawRectangle(rgbSrc, matchLocation);
-                                    displayBufferedImage(iplImageToBufferedImage(rgbSrc));
-                                }
-                                else
-                                {
-                                    displayBufferedImage(bufferedImageRGB);
-                                }
-                            }
-                            else
-                            {
-                                displayBufferedImage(bufferedImageRGB);
-                            }
-                            isComputingTheImage = false;
-                        }
-                    });
+                    Platform.runLater(this::updateCameraCanvasWithFindingMarker);
                 }
             }
             Delay.ms(33);
@@ -1512,7 +1449,7 @@ public class Controller extends BaseController {
         while (running)
         {
             if (runGPS) {
-                gpsValues = readGPS();
+                readGPS();
             }
 
             if (!running) break;
@@ -1546,10 +1483,11 @@ public class Controller extends BaseController {
     {
         System.out.println("start main");
         while (running) {
+            currentVelocity = defaultVelocity;
             requestAutomate();
             stateAutomate();
             applyMove();
-            if (!getBatteryState()) {
+            if (getBatteryPercentage() == 0.) {
                 System.err.println("Error: Robot out of battery...");
                 isPowerEmpty = true;
                 break;
@@ -1560,21 +1498,41 @@ public class Controller extends BaseController {
         {
             setDisableAllMotionButtons(true);
             kill();
-            Platform.runLater(new Runnable() {
-                @Override
-                public void run() {
-                    resetUIGeneral();
-                }
-            });
+            Platform.runLater(this::resetUI);
         }
         System.out.println("stop main");
     }
     //endregion
 
+    //region Generate angle methods
+    private double generateRotationAim()
+    {
+        return clapAngle(getGpsRz() - 180. + (360. * Rand.getDouble()));
+    }
+
+    private double generateRotationAimTrackAvoid()
+    {
+        return clapAngle(getGpsRz() + (whereObstacleDetected(1, 4) <= 2 ? -90. : 90.));
+    }
+
+    private double clapAngle(double angle)
+    {
+        if (angle > 180.) {
+            angle -= 360;
+        }
+        else if (angle <= -180.) {
+            angle += 360.;
+        }
+        return angle;
+    }
+
+    //endregion
+
     //region Automate Methods
-    private void requestAutomate() {
+    private void requestAutomate()
+    {
         if (requestState != currentState) {
-            switch (requestState){
+            switch (requestState) {
                 case None:
                     currentState = States.None;
                     break;
@@ -1592,16 +1550,29 @@ public class Controller extends BaseController {
                     currentState = States.Wander;
                     break;
                 case Track:
-                    wasTracking = false;
-                    isSearching = false;
                     matchLocation = null;
+                    wasTracking = false;
+                    isSearchingMarker = false;
+                    isEnoughCloseToStation = false;
+                    goToMarkerLeftRightAlternationCounter = 0;
+                    matchLocationTargetBackupCounter.set(TARGET_BACKUP_THRESHOLD);
+                    approachStationStep = ApproachToStationSteps.None;
                     currentState = States.Track;
+                    break;
+                case StationApproach:
+                    currentState = States.StationApproach;
+                    break;
+                case Charging:
+                    batteryTimer.stop();
+                    batteryChargingValue = getBatteryTime();
+                    currentState = States.Charging;
                     break;
             }
         }
     }
 
-    private void stateAutomate() {
+    private void stateAutomate()
+    {
         switch (currentState) {
             case None:
                 break;
@@ -1609,7 +1580,10 @@ public class Controller extends BaseController {
                 requestState = States.Clean;
                 break;
             case Clean:
-                if (checkBatteryLowRoutine()) {
+                if (isBatteryLow()) {
+                    System.out.println("Battery Low !");
+                    requestState = States.Track;
+                    dir = MotionDirections.Stop;
                     break;
                 }
                 if (isObstacleDetected()) {
@@ -1630,7 +1604,8 @@ public class Controller extends BaseController {
                             forwardTimestamp = System.currentTimeMillis() + 1500; // + 3 secs
                             dir = MotionDirections.Forward;
                         }
-                        else {
+                        else
+                        {
                             requestState = States.Clean;
                         }
                     }
@@ -1652,12 +1627,8 @@ public class Controller extends BaseController {
                 }
                 break;
             case Wander:
-                if (!hasForwardTimestamp)
+                if (hasForwardTimestamp)
                 {
-                    forwardTimestamp = System.currentTimeMillis() + 1500; // + 3 secs
-                    hasForwardTimestamp = true;
-                }
-                else {
                     if (isObstacleDetected())
                     {
                         dir = MotionDirections.Stop;
@@ -1671,95 +1642,176 @@ public class Controller extends BaseController {
                         requestState = States.Track;
                     }
                 }
+                else
+                {
+                    forwardTimestamp = System.currentTimeMillis() + 1500; // + 1.5 secs
+                    hasForwardTimestamp = true;
+                }
                 break;
             case Track:
-                // on ne verifie l'etat de la batterie car on cherche a rejoindre la base
                 if (isObstacleDetected()) {
                     dir = MotionDirections.Stop;
                     requestState = States.Avoid;
                     break;
                 }
-                if (matchLocation == null) {
-                    if (!isSearching) {
-                        searchingMaxAngle = clapAngle(getGPSRz() - 1);
-                        searchingMinAngle = clapAngle(getGPSRz() - 10);
-                        isSearching = true;
-                    }
-                    else if (getGPSRz() <= searchingMaxAngle && getGPSRz() >= searchingMinAngle) {
-                        System.out.println("ici");
-                        requestState = States.Wander;
-                    }
-                    else {
-                        dir = MotionDirections.Left;
-                    }
+                if (matchLocation == null && matchLocationTargetBackupCounter.get() >= TARGET_BACKUP_THRESHOLD) {
+                    // if no target or lost for 1 sec
+                    searchMarker();
                 }
                 else {
-                    dir = MotionDirections.Stop;
-                    if (target.x() > (resolutionCamera/2)+10){
-                        dir = MotionDirections.Right;
-                    }
-                    else if (target.x() < (resolutionCamera/2)-10){
-                        dir = MotionDirections.Left;
-                    }
-                    else {
-                        dir = MotionDirections.Forward;
-                    }
+                    goToMarker();
+                }
+                break;
+            case StationApproach:
+                executeApproach();
+                break;
+            case Charging:
+                batteryChargingValue = Math.min(batteryChargingValue + 0.005, MAX_BATTERY_TIME);
+                setBatteryTime((int)batteryChargingValue);
+                if (batteryChargingValue == MAX_BATTERY_TIME) {
+                    requestState = States.Initialize;
+                    batteryTimer.restart();
                 }
                 break;
         }
     }
 
-    private  double generateRotationAimTrackAvoid()
+    private void searchMarker()
     {
-        int angle = whereObstacleDetected(1, 4) <= 2 ? -90 : 90;
-        return clapAngle(getGPSRz() + angle);
-    }
-
-    private double clapAngle(double angle){
-        if (angle > 180){
-            angle = angle - 360;
-        } else if (angle < -180){
-            angle = angle + 360;
+        double currentRz = getGpsRz();
+        if (!isSearchingMarker) {
+            // generate a zone just before the current angle
+            searchingDir = (target.x() < resolutionCamera / 2) ? MotionDirections.Left : MotionDirections.Right;
+            if (searchingDir == MotionDirections.Left) {
+                if (currentRz < -175.) {
+                    searchingMaxAngle = 180.;
+                    searchingMinAngle = 175.;
+                }
+                else {
+                    searchingMaxAngle = currentRz - 1;
+                    searchingMinAngle = currentRz - 5;
+                }
+            }
+            else {
+                if (currentRz > 175.) {
+                    searchingMinAngle = -180.;
+                    searchingMaxAngle = -175.;
+                }
+                else {
+                    searchingMaxAngle = currentRz + 1;
+                    searchingMinAngle = currentRz + 5;
+                }
+            }
+            isSearchingMarker = true;
         }
-        return angle;
-    }
-
-    private boolean rotateToAim() {
-        double orientation = getGPSRz();
-        double deltaOrientation = clapAngle(orientationAim - orientation);
-        boolean result = false;
-
-        if (deltaOrientation > 3) {
-            dir = MotionDirections.Left;
-        }
-        else if (deltaOrientation < -3) {
-            dir = MotionDirections.Right;
+        else if (currentRz >= searchingMinAngle && currentRz <= searchingMaxAngle) {
+            // reaching the zone means we did a 360° movement
+            // nothing found, move on...
+            requestState = States.Wander;
         }
         else {
-            result = true;
+            // rotating at low speed
+            currentVelocity = veryLowVelocity;
+            dir = searchingDir;
         }
-
-        return result;
     }
 
-    private boolean moveToForwardTimestamp()
+    private void goToMarker()
     {
-        boolean result = System.currentTimeMillis() >= forwardTimestamp;
-        if (!result)
-        {
-            dir = MotionDirections.Forward;
+        if (target.x() > (resolutionCamera / 2) + MARKER_CENTER_RANGE) {
+            // target is on the right
+            currentVelocity = veryLowVelocity;
+            if (dir == MotionDirections.Left) {
+                goToMarkerLeftRightAlternationCounter++;
+            }
+            dir = goToMarkerLeftRightAlternationCounter > LEFT_RIGHT_ALTERNATION_THRESHOLD ? MotionDirections.Forward : MotionDirections.Right;
         }
-        return result;
+        else if (target.x() < (resolutionCamera / 2) - MARKER_CENTER_RANGE) {
+            // target is on the left
+            currentVelocity = veryLowVelocity;
+            if (dir == MotionDirections.Right) {
+                goToMarkerLeftRightAlternationCounter++;
+            }
+            dir =  goToMarkerLeftRightAlternationCounter > LEFT_RIGHT_ALTERNATION_THRESHOLD ? MotionDirections.Forward : MotionDirections.Left;
+        }
+        else {
+            goToMarkerLeftRightAlternationCounter = 0;
+            double distance = Utils.getEuclidean(STATION_POS_X, STATION_POS_Y, getGpsX(), getGpsY());
+            isEnoughCloseToStation = distance <= MIN_DISTANCE_ROBOT_TO_STATION;
+            if (isEnoughCloseToStation)
+            {
+                requestState = States.StationApproach;
+                dir = MotionDirections.Stop;
+                approachStationStep = (Math.abs(getGpsY()) < 0.002) ? ApproachToStationSteps.RotateToXAlignment : ApproachToStationSteps.RotateToYAlignment;
+            }
+            else
+            {
+                if (distance <= 5. * MIN_DISTANCE_ROBOT_TO_STATION) {
+                    currentVelocity = lowVelocity;
+                }
+                dir = MotionDirections.Forward;
+            }
+        }
     }
 
-    private boolean checkBatteryLowRoutine() {
-        boolean bLow = isBatteryLow();
-        if (bLow) {
-            System.out.println("Battery Low !");
-            requestState = States.Track;
-            dir = MotionDirections.Stop;
+    private void executeApproach()
+    {
+        currentVelocity = veryLowVelocity / 4f;
+        double currentX = getGpsX();
+        double currentY = getGpsY();
+        double currentRz = getGpsRz();
+
+        switch (approachStationStep)
+        {
+            case RotateToYAlignment:
+                if ((currentY < 0. && currentRz < 89.) || (currentY > 0. && currentRz < -91.)) {
+                    dir = MotionDirections.Left;
+                }
+                else if ((currentY < 0. && currentRz > 91.) || (currentY > 0. && currentRz > -89.)) {
+                    dir = MotionDirections.Right;
+                }
+                else {
+                    dir = MotionDirections.Stop;
+                    approachStationStep = ApproachToStationSteps.YAlignment;
+                }
+                break;
+            case YAlignment:
+                if (Math.abs(currentY) > 0.002) {
+                    if (currentRz > 0.) {
+                        dir = currentY > 0. ? MotionDirections.Backward : MotionDirections.Forward;
+                    }
+                    else {
+                        dir = currentY > 0. ? MotionDirections.Forward : MotionDirections.Backward;
+                    }
+                }
+                else {
+                    dir = MotionDirections.Stop;
+                    approachStationStep = ApproachToStationSteps.RotateToXAlignment;
+                }
+                break;
+            case RotateToXAlignment:
+                if ((180. - Math.abs(currentRz)) > 1.) {
+                    dir = currentRz > 0. ? MotionDirections.Left : MotionDirections.Right;
+                }
+                else {
+                    dir = MotionDirections.Stop;
+                    approachStationStep = ApproachToStationSteps.XAlignment;
+                }
+                break;
+            case XAlignment:
+                if (Math.abs(currentX) > 0.002) {
+                    dir = currentX > 0. ? MotionDirections.Forward : MotionDirections.Backward;
+                }
+                else {
+                    dir = MotionDirections.Stop;
+                    approachStationStep = ApproachToStationSteps.IsAtStation;
+                }
+                break;
+            case IsAtStation:
+                dir = MotionDirections.Stop;
+                requestState = States.Charging;
+                break;
         }
-        return bLow;
     }
     //endregion
 
