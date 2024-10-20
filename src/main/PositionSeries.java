@@ -5,9 +5,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class PositionSeries {
-    private String name;
-    private Color color;
-    private List<PositionSample> samples;
+    private final String name;
+    private final Color color;
+    private final List<PositionSample> samples;
 
     public PositionSeries(String name, Color color) {
         this.name = name;
@@ -15,17 +15,6 @@ public class PositionSeries {
         this.samples = new ArrayList<>();
     }
 
-    // Ajouter un échantillon
-    public void addSample(PositionSample sample) {
-        this.samples.add(sample);
-    }
-
-    // Vider la liste d'échantillons
-    public void clearSamples() {
-        this.samples.clear();
-    }
-
-    // Getters
     public String getName() {
         return name;
     }
@@ -36,5 +25,13 @@ public class PositionSeries {
 
     public List<PositionSample> getSamples() {
         return samples;
+    }
+
+    public void addSample(PositionSample sample) {
+        this.samples.add(sample);
+    }
+
+    public void clearSamples() {
+        this.samples.clear();
     }
 }

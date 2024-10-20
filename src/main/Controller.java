@@ -141,8 +141,6 @@ public class Controller extends BaseController {
     private final static javafx.scene.paint.Color RED_LED = javafx.scene.paint.Color.RED;
     private final static javafx.scene.paint.Color ORANGE_LED = javafx.scene.paint.Color.ORANGE;
     private final static javafx.scene.paint.Color GRAY_LED = javafx.scene.paint.Color.DARKGRAY;
-
-    private Stage positionChartsStage;
     //endregion
 
     //region V-rep communication and simulation variables declaration
@@ -238,6 +236,32 @@ public class Controller extends BaseController {
     //endregion
 
     //region Camera variables declaration
+    private static class CvPointDoublePair
+    {
+        public CvPoint point;
+        public double scaleFactor;
+
+        public CvPointDoublePair(CvPoint point, double scaleFactor)
+        {
+            this.point = point;
+            this.scaleFactor = scaleFactor;
+        }
+    }
+
+    private static class IplImageIntPair
+    {
+        public IplImage image;
+        public int scaleFactor;
+
+        public IplImageIntPair(IplImage image, int scaleFactor)
+        {
+            this.image = image;
+            this.scaleFactor = scaleFactor;
+        }
+    }
+
+    private IplImageIntPair[] resizedMarkers;
+
     private CvPointDoublePair matchLocation;
     private final CvPoint target = new CvPoint();
 
@@ -289,31 +313,13 @@ public class Controller extends BaseController {
     private ApproachToStationSteps approachStationStep = ApproachToStationSteps.None;
     //endregion
 
-    private static class CvPointDoublePair
-    {
-        public CvPoint point;
-        public double scaleFactor;
+    //region Positions record
+    private long startSimulationTimestamp;
+    private Stage positionChartsStage;
+    private PositionChartsController positionChartsController;
 
-        public CvPointDoublePair(CvPoint point, double scaleFactor)
-        {
-            this.point = point;
-            this.scaleFactor = scaleFactor;
-        }
-    }
-
-    private static class IplImageIntPair
-    {
-        public IplImage image;
-        public int scaleFactor;
-
-        public IplImageIntPair(IplImage image, int scaleFactor)
-        {
-            this.image = image;
-            this.scaleFactor = scaleFactor;
-        }
-    }
-
-    private IplImageIntPair[] resizedMarkers;
+    private final PositionSeries gpsPositionsSeries = new PositionSeries("GPS", javafx.scene.paint.Color.RED);
+    //endregion
     //endregion
 
     //region Methods
@@ -797,6 +803,8 @@ public class Controller extends BaseController {
 
     private void handlePositionChartsCloseEvent()
     {
+        positionChartsController.stop();
+        positionChartsController = null;
         positionChartsStage.setOnCloseRequest((WindowEvent event) -> handlePositionChartsCloseEvent());
         positionChartsStage = null;
     }
@@ -961,7 +969,6 @@ public class Controller extends BaseController {
             {
                 fxmlLoader = new FXMLLoader(getClass().getResource("PositionChartsGUI.fxml"));
                 root = fxmlLoader.load();
-
             }
             catch (Exception e)
             {
@@ -975,11 +982,14 @@ public class Controller extends BaseController {
                 positionChartsStage = new Stage();
                 positionChartsStage.setTitle("Position Charts");
                 positionChartsStage.setScene(new Scene(root));
-
-                ((BaseController)fxmlLoader.getController()).setStage(positionChartsStage);
+                positionChartsController = fxmlLoader.getController();
+                positionChartsController.setStage(positionChartsStage);
+                positionChartsController.setPositionSeriesList(gpsPositionsSeries);
 
                 positionChartsStage.setOnCloseRequest((WindowEvent event) -> handlePositionChartsCloseEvent());
                 positionChartsStage.show();
+
+                positionChartsController.start();
             }
         }
         else
@@ -1047,7 +1057,7 @@ public class Controller extends BaseController {
         btnLeft.setDisable(setDisable);
         btnStop.setDisable(setDisable);
 
-        btnPositionChart.setDisable(setDisable);
+        //btnPositionChart.setDisable(setDisable);
     }
 
     private void updateLeds()
@@ -1200,8 +1210,8 @@ public class Controller extends BaseController {
         }
     }
 
-    @Override
-    public void init()
+    @FXML
+    private void initialize()
     {
         defaultButtonStyle = btnForward.getStyle();
         markerImage = cvLoadImage("data/images/marker.jpg", 0);
@@ -1322,11 +1332,15 @@ public class Controller extends BaseController {
             firstReadAllSensors();
             setDisableAllMotionButtons(!runMotion);
 
+            gpsPositionsSeries.clearSamples();
+
             forceStop();
             requestState = States.Initialize;
             running = true;
 
             initTimers(true);
+
+            startSimulationTimestamp = System.currentTimeMillis();
             initThreads(true);
         }
     }
@@ -1501,11 +1515,20 @@ public class Controller extends BaseController {
 
     private void updateSensorThreadRunnable()
     {
+        long now;
+        long recordGpsTimestamp = System.currentTimeMillis() + 200; // + 200 ms
+
         System.out.println("start update sensors");
         while (running)
         {
             if (runGPS) {
                 readGPS();
+                now = System.currentTimeMillis();
+                if (now >= recordGpsTimestamp)
+                {
+                    gpsPositionsSeries.addSample(new PositionSample(getGpsX(), getGpsY(), getGpsRz(), now - startSimulationTimestamp));
+                    recordGpsTimestamp = now + 200;
+                }
             }
 
             if (!running) break;

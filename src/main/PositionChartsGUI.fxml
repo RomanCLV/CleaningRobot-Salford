@@ -24,40 +24,40 @@
         <!-- Graph for X -->
         <LineChart fx:id="chartX" title="X" GridPane.columnIndex="0" GridPane.rowIndex="0">
             <xAxis>
-                <NumberAxis label="Time"/>
+                <NumberAxis label="Time" upperBound="10" />
             </xAxis>
             <yAxis>
-                <NumberAxis label="X"/>
+                <NumberAxis label="X" lowerBound="-1" upperBound="1"/>
             </yAxis>
         </LineChart>
 
         <!-- Graph for Y -->
         <LineChart fx:id="chartY" title="Y" GridPane.columnIndex="1" GridPane.rowIndex="0">
             <xAxis>
-                <NumberAxis label="Time"/>
+                <NumberAxis label="Time" upperBound="10" />
             </xAxis>
             <yAxis>
-                <NumberAxis label="Y"/>
+                <NumberAxis label="Y" lowerBound="-1" upperBound="1"/>
             </yAxis>
         </LineChart>
 
         <!-- Graph for Theta -->
         <LineChart fx:id="chartTheta" title="θ" GridPane.columnIndex="0" GridPane.rowIndex="1">
             <xAxis>
-                <NumberAxis label="Time"/>
+                <NumberAxis label="Time" upperBound="10"/>
             </xAxis>
             <yAxis>
-                <NumberAxis label="θ"/>
+                <NumberAxis label="θ" lowerBound="-180" upperBound="180"/>
             </yAxis>
         </LineChart>
 
         <!-- Graph for XY -->
         <LineChart fx:id="chartXY" title="XY" GridPane.columnIndex="1" GridPane.rowIndex="1">
             <xAxis>
-                <NumberAxis label="X"/>
+                <NumberAxis label="X" lowerBound="-3" upperBound="3"/>
             </xAxis>
             <yAxis>
-                <NumberAxis label="Y"/>
+                <NumberAxis label="Y" lowerBound="-3" upperBound="3"/>
             </yAxis>
         </LineChart>
     </GridPane>

@@ -1,5 +1,6 @@
 package utils;
 
+import javafx.scene.paint.Color;
 import java.text.DecimalFormat;
 
 /**
@@ -62,5 +63,12 @@ public class Utils
     public static double getEuclidean(double x1, double y1, double x2, double y2)
     {
         return(Math.sqrt(Math.pow(x1 - x2, 2.0) + Math.pow(y1 - y2, 2.0)));
+    }
+
+    public static String toHexString(Color color) {
+        return String.format("#%02x%02x%02x",
+                (int) (color.getRed() * 255),
+                (int) (color.getGreen() * 255),
+                (int) (color.getBlue() * 255));
     }
 }
