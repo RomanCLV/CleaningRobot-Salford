@@ -29,23 +29,59 @@
         <VBox GridPane.rowSpan="3" translateY="11">
             <Button fx:id="btnAutomaticMode" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
                     mnemonicParsing="false" onAction="#btnAutomaticModePressed" prefHeight="38.0" prefWidth="38.0"
-                    text="A"/>
+                    text="A">
+                <graphic>
+                    <ImageView fitHeight="36.0" fitWidth="36.0" pickOnBounds="true" preserveRatio="true" translateX="-7">
+                        <Image url="@../img/automatic_icon.png"/>
+                    </ImageView>
+                </graphic>
+            </Button>
             <Button fx:id="btnManualMode" translateY="5" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
                     mnemonicParsing="false" onAction="#btnManualModePressed" prefHeight="38.0" prefWidth="38.0"
-                    text="M"/>
+                    text="M">
+                <graphic>
+                    <ImageView fitHeight="36.0" fitWidth="36.0" preserveRatio="true" pickOnBounds="true" translateX="-7">
+                        <Image url="@../img/manual-icon.png"/>
+                    </ImageView>
+                </graphic>
+            </Button>
 
             <Button fx:id="btnDefaultSpeed" translateY="30" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
                     mnemonicParsing="false" onAction="#btnDefaultSpeedPressed" prefHeight="38.0" prefWidth="38.0"
-                    text="V"/>
+                    text="V">
+                <graphic>
+                    <ImageView fitHeight="36.0" fitWidth="36.0" pickOnBounds="true" preserveRatio="true" translateX="-7">
+                        <Image url="@../img/rabbit-icon.png"/>
+                    </ImageView>
+                </graphic>
+            </Button>
             <Button fx:id="btnLowSpeed" translateY="35" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
                     mnemonicParsing="false" onAction="#btnLowSpeedPressed" prefHeight="38.0" prefWidth="38.0"
-                    text="V-"/>
+                    text="V-">
+                <graphic>
+                    <ImageView fitHeight="36.0" fitWidth="36.0" pickOnBounds="true" preserveRatio="true" translateX="-7">
+                        <Image url="@../img/turtle-icon.png"/>
+                    </ImageView>
+                </graphic>
+            </Button>
             <Button fx:id="btnVeryLowSpeed" translateY="40" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
                     mnemonicParsing="false" onAction="#btnVeryLowSpeedPressed" prefHeight="38.0" prefWidth="38.0"
-                    text="V--"/>
+                    text="V--">
+                <graphic>
+                    <ImageView fitHeight="36.0" fitWidth="36.0" pickOnBounds="true" preserveRatio="true" translateX="-7">
+                        <Image url="@../img/snail-icon.png"/>
+                    </ImageView>
+                </graphic>
+            </Button>
             <Button fx:id="btnVeryVeryLowSpeed" translateY="45" maxHeight="38.0" maxWidth="38.0" minHeight="38.0" minWidth="38.0"
                     mnemonicParsing="false" onAction="#btnVeryVeryLowSpeedPressed" prefHeight="38.0" prefWidth="38.0"
-                    text="V---"/>
+                    text="V---">
+                <graphic>
+                    <ImageView fitHeight="36.0" fitWidth="36.0" pickOnBounds="true" preserveRatio="true" translateX="-7">
+                        <Image url="@../img/sacha-icon.png"/>
+                    </ImageView>
+                </graphic>
+            </Button>
         </VBox>
 
         <Button fx:id="btnConnect" mnemonicParsing="false" onAction="#btnConnectPressed" GridPane.columnIndex="1" prefHeight="48.0"
@@ -225,8 +261,10 @@
         <Label fx:id="lblGpsX" text="X:" translateX="20.0" translateY="-30.0"
                GridPane.columnIndex="2" GridPane.halignment="LEFT" GridPane.rowIndex="2"
                GridPane.valignment="CENTER"/>
+
         <Label fx:id="lblGpsY" text="Y:" translateX="20.0" GridPane.columnIndex="2"
                GridPane.halignment="LEFT" GridPane.rowIndex="2" GridPane.valignment="CENTER"/>
+
         <Label fx:id="lblGpsTheta" text="θ:" translateX="20.0" translateY="30.0"
                GridPane.columnIndex="2" GridPane.halignment="LEFT" GridPane.rowIndex="2"
                GridPane.valignment="CENTER"/>
