@@ -985,11 +985,16 @@ public class Controller extends BaseController {
                 positionChartsController = fxmlLoader.getController();
                 positionChartsController.setStage(positionChartsStage);
                 positionChartsController.setPositionSeriesList(gpsPositionsSeries);
+                positionChartsController.setDisplayWindowSeconds(20);
 
                 positionChartsStage.setOnCloseRequest((WindowEvent event) -> handlePositionChartsCloseEvent());
                 positionChartsStage.show();
 
-                positionChartsController.start();
+                if (running)
+                {
+                    positionChartsController.setStartSimulationTimestamp(startSimulationTimestamp);
+                    positionChartsController.start();
+                }
             }
         }
         else
@@ -1341,6 +1346,11 @@ public class Controller extends BaseController {
             initTimers(true);
 
             startSimulationTimestamp = System.currentTimeMillis();
+            if (positionChartsController != null)
+            {
+                positionChartsController.setStartSimulationTimestamp(startSimulationTimestamp);
+                positionChartsController.start();
+            }
             initThreads(true);
         }
     }

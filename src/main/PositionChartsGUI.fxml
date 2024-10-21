@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.lang.*?>
-<?import java.util.*?>
-<?import javafx.scene.*?>
 <?import javafx.scene.chart.*?>
-<?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 
 <AnchorPane xmlns="http://javafx.com/javafx"
@@ -24,41 +20,41 @@
         <!-- Graph for X -->
         <LineChart fx:id="chartX" title="X" GridPane.columnIndex="0" GridPane.rowIndex="0">
             <xAxis>
-                <NumberAxis label="Time" upperBound="10" />
+                <NumberAxis fx:id="xAxisX" label="Time" upperBound="10" />
             </xAxis>
             <yAxis>
-                <NumberAxis label="X" lowerBound="-1" upperBound="1"/>
+                <NumberAxis fx:id="xAxisY" label="X" lowerBound="-1" upperBound="1"/>
             </yAxis>
         </LineChart>
 
         <!-- Graph for Y -->
         <LineChart fx:id="chartY" title="Y" GridPane.columnIndex="1" GridPane.rowIndex="0">
             <xAxis>
-                <NumberAxis label="Time" upperBound="10" />
+                <NumberAxis fx:id="yAxisX" label="Time" upperBound="10" />
             </xAxis>
             <yAxis>
-                <NumberAxis label="Y" lowerBound="-1" upperBound="1"/>
+                <NumberAxis fx:id="yAxisY" label="Y" lowerBound="-1" upperBound="1"/>
             </yAxis>
         </LineChart>
 
         <!-- Graph for Theta -->
         <LineChart fx:id="chartTheta" title="θ" GridPane.columnIndex="0" GridPane.rowIndex="1">
             <xAxis>
-                <NumberAxis label="Time" upperBound="10"/>
+                <NumberAxis fx:id="thetaAxisX" label="Time" upperBound="10"/>
             </xAxis>
             <yAxis>
-                <NumberAxis label="θ" lowerBound="-180" upperBound="180"/>
+                <NumberAxis fx:id="thetaAxisY" label="θ" lowerBound="-180" upperBound="180"/>
             </yAxis>
         </LineChart>
 
         <!-- Graph for XY -->
-        <LineChart fx:id="chartXY" title="XY" GridPane.columnIndex="1" GridPane.rowIndex="1">
+        <ScatterChart fx:id="chartXY" title="XY" GridPane.columnIndex="1" GridPane.rowIndex="1">
             <xAxis>
-                <NumberAxis label="X" lowerBound="-3" upperBound="3"/>
+                <NumberAxis fx:id="xyAxisX" label="X" lowerBound="-3" upperBound="3"/>
             </xAxis>
             <yAxis>
-                <NumberAxis label="Y" lowerBound="-3" upperBound="3"/>
+                <NumberAxis fx:id="xyAxisY" label="Y" lowerBound="-3" upperBound="3"/>
             </yAxis>
-        </LineChart>
+        </ScatterChart>
     </GridPane>
 </AnchorPane>
