@@ -51,6 +51,7 @@ public class Timer
                         return;
                     }
                     counter++;
+
                 }
             }
         };
@@ -135,7 +136,7 @@ public class Timer
     * Returns    : True if timer has elapsed, False otherwise.
     * Notes      : None.
     **/
-    public synchronized boolean getState()               { return(timerFlag);          }
+    public synchronized boolean getState()               { return (timerFlag);          }
     public synchronized void setState(boolean timerFlag) { this.timerFlag = timerFlag; }
 
    /**
