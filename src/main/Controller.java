@@ -170,11 +170,11 @@ public class Controller extends BaseController {
     private final int    DEFAULT_BATTERY_TIME_MIN = 1;
     private final int    MAX_BATTERY_TIME = 60 * DEFAULT_BATTERY_TIME_MIN; // Default 20 minutes battery time.
 
-    private final double MARKER_THRESHOLD = 0.75;                // 0 < x < 1
+    private final double MARKER_THRESHOLD = 0.75;               // 0 < x < 1
     private final double MIN_DISTANCE_ROBOT_TO_STATION = 0.25;  // 0 < x
     private final int    MARKER_CENTER_RANGE = 10;              // 0 < x
     private final double ROTATION_AIM_RANGE = 3.0;              // 0 < x
-    private final float  BATTERY_LOW_THRESHOLD = 50f;           // 0 < x < 100
+    private final float  BATTERY_LOW_THRESHOLD = 99f;           // 0 < x < 100
     private final int    TARGET_BACKUP_THRESHOLD = 50;
     private final int    LEFT_RIGHT_ALTERNATION_THRESHOLD = 6;
     //endregion
@@ -416,15 +416,15 @@ public class Controller extends BaseController {
         gpsRz = clapAngle(((double) orientation.getArray()[2] * 180.) / Math.PI + VREP_START_POS_RZ);
     }
 
-    private double getGpsX() {
+    private synchronized double getGpsX() {
         return gpsX;
     }
 
-    private double getGpsY() {
+    private synchronized double getGpsY() {
         return gpsY;
     }
 
-    private double getGpsRz() {
+    private synchronized double getGpsRz() {
         return gpsRz;
     }
     //endregion
@@ -1565,11 +1565,11 @@ public class Controller extends BaseController {
             requestAutomate();
             stateAutomate();
             applyMove();
-            if (getBatteryPercentage() == 0.) {
-                System.err.println("Error: Robot out of battery...");
-                isPowerEmpty = true;
-                break;
-            }
+//            if (getBatteryPercentage() == 0.) {
+//                System.err.println("Error: Robot out of battery...");
+//                isPowerEmpty = true;
+//                break;
+//            }
             Delay.ms(1);
         }
         if (isPowerEmpty)
@@ -1625,7 +1625,7 @@ public class Controller extends BaseController {
                     break;
                 case Initialize:
                     resetMotionButtonsStyle();
-                    setDisableAllMotionButtons(true);
+                    setDisableAllMotionButtons(operatingMode == OperatingMode.Automatic);
                     currentState = States.Initialize;
                     break;
                 case Manual:
@@ -1673,7 +1673,7 @@ public class Controller extends BaseController {
             case None:
                 break;
             case Initialize:
-                requestState = States.Clean;
+                requestState = operatingMode == OperatingMode.Automatic ? States.Clean : States.Manual;
                 break;
             case Manual:
                 double currentX = getGpsX();
@@ -1783,12 +1783,9 @@ public class Controller extends BaseController {
                 batteryChargingValue = Math.min(batteryChargingValue + 0.005, 100.);
                 setBatteryTime((int)batteryChargingValue);
                 if (batteryChargingValue == 100.) {
-                    if (operatingMode == OperatingMode.Automatic)
+                    if (operatingMode == OperatingMode.Automatic || dir != MotionDirections.Stop)
                     {
                         requestState = States.Initialize;
-                    }
-                    else if (dir != MotionDirections.Stop) {
-                        requestState = States.Manual;
                         batteryTimer.restart();
                     }
                 }
@@ -1831,7 +1828,7 @@ public class Controller extends BaseController {
         }
         else {
             // rotating at low speed
-            currentVelocity = veryLowVelocity;
+            currentVelocity = /*veryLowVelocity*/lowVelocity;
             dir = searchingDir;
         }
     }
@@ -1874,11 +1871,12 @@ public class Controller extends BaseController {
             {
                 requestState = States.StationApproach;
                 dir = MotionDirections.Stop;
-                approachStationStep = (Math.abs(getGpsY()) < 0.002) ? ApproachToStationSteps.RotateToXAlignment : ApproachToStationSteps.RotateToYAlignment;
+                approachStationStep = Math.abs(STATION_POS_Y - getGpsY()) < 0.002 ? ApproachToStationSteps.RotateToXAlignment : ApproachToStationSteps.RotateToYAlignment;
+                System.out.println("on passe  en " + approachStationStep.name());
             }
             else
             {
-                if (distance <= 5. * MIN_DISTANCE_ROBOT_TO_STATION) {
+                if (distance <= 3. * MIN_DISTANCE_ROBOT_TO_STATION) {
                     currentVelocity = lowVelocity;
                 }
                 dir = MotionDirections.Forward;
@@ -1888,7 +1886,7 @@ public class Controller extends BaseController {
 
     private void executeApproach()
     {
-        currentVelocity = veryLowVelocity / 4f;
+        currentVelocity = lowVelocity;
         double currentX = getGpsX();
         double currentY = getGpsY();
         double currentRz = getGpsRz();
@@ -1897,25 +1895,43 @@ public class Controller extends BaseController {
         switch (approachStationStep)
         {
             case RotateToYAlignment:
-                if ((currentY < STATION_POS_Y && currentRz < 89.) || (currentY > STATION_POS_Y && currentRz < -91.)) {
-                    tmp = currentY < STATION_POS_Y ? 90. : -90.;
-                    dir = MotionDirections.Left;
+                if (currentY <= STATION_POS_Y)
+                {
+                    dir = currentRz > 90. ? MotionDirections.Right : MotionDirections.Left;
+                    tmp = 90.;
+                    System.out.print("y - | 90 | " + (Math.round(1000. * currentRz) / 1000.));
                 }
-                else if ((currentY < STATION_POS_Y && currentRz > 91.) || (currentY > STATION_POS_Y && currentRz > -89.)) {
-                    tmp = currentY < STATION_POS_Y ? 90. : -90.;
-                    dir = MotionDirections.Right;
+                else
+                {
+                    dir = currentRz < -90. ? MotionDirections.Left : MotionDirections.Right;
+                    tmp = -90.;
+                    System.out.print("y + | -90 | " + (Math.round(1000. * currentRz) / 1000.));
                 }
-                else {
-                    tmp = currentRz;
+                double rest = Math.abs(tmp - currentRz);
+                System.out.print(" | " + (Math.round(1000.*rest) / 1000.));
+
+                if (rest < 0.5) {
+                    System.out.println(" | stop");
+                    System.out.println("------------------------");
                     dir = MotionDirections.Stop;
                     approachStationStep = ApproachToStationSteps.YAlignment;
                 }
-                if (tmp - currentRz > 10.) currentVelocity = lowVelocity;
+                else if (rest < 10.) {
+                    System.out.println(" | veryLowVelocity");
+                    currentVelocity = veryLowVelocity / 4f;
+                }
+                else {
+                    System.out.println(" | speed");
+                }
+
                 break;
             case YAlignment:
-                tmp = Math.abs(currentY);
-                if (tmp > STATION_POS_Y + 0.002) {
-                    if (tmp > STATION_POS_Y + 0.10) currentVelocity = lowVelocity;
+                tmp = Math.abs(currentY - STATION_POS_Y);
+                //System.out.println("");
+                if (tmp > 0.002) {
+                    if (tmp < 0.10)
+                        currentVelocity = veryLowVelocity / 4f;
+
                     if (currentRz > 0.) {
                         dir = currentY > STATION_POS_Y ? MotionDirections.Backward : MotionDirections.Forward;
                     }
@@ -1931,7 +1947,8 @@ public class Controller extends BaseController {
             case RotateToXAlignment:
                 tmp = 180. - Math.abs(currentRz);
                 if (tmp > 1.) {
-                    if (tmp > 10.) currentVelocity = lowVelocity;
+                    if (tmp > 10.)
+                        currentVelocity = lowVelocity;
                     dir = currentRz > 0. ? MotionDirections.Left : MotionDirections.Right;
                 }
                 else {
@@ -1942,7 +1959,8 @@ public class Controller extends BaseController {
             case XAlignment:
                 tmp = Math.abs(currentX);
                 if (tmp > (STATION_POS_X + 0.002)) {
-                    if (tmp > (STATION_POS_X + 0.15)) currentVelocity = lowVelocity;
+                    if (tmp > (STATION_POS_X + 0.15))
+                        currentVelocity = lowVelocity;
                     dir = currentX > 0. ? MotionDirections.Forward : MotionDirections.Backward;
                 }
                 else {
